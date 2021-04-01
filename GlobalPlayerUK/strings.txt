@@ -1,0 +1,5 @@
+PLUGIN_GLOBALPLAYERUK
+	EN	Global Player (UK)
+
+PLUGIN_VIRGINRADIO_DESC
+	EN	Global Player (UK) - Stations etc

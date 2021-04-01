@@ -1,0 +1,11 @@
+[% PROCESS settings/header.html %]
+
+[% WRAPPER setting title="PLUGIN_VIRGINRADIO_RADIOMENU" desc="PLUGIN_VIRGINRADIO_RADIOMENU_DESC" %]
+
+<div class="prefDesc">[% "ENABLE" | string %]
+    <input name="pref_is_radio" type="checkbox" [% IF prefs.pref_is_radio %] checked [% END %]>
+</div>
+
+[% END %]
+
+[% PROCESS settings/footer.html %]
