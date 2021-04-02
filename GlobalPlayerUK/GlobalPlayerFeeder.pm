@@ -63,7 +63,7 @@ sub toplevel {
 		{
 			name => 'Podcasts',
 			type => 'link',
-			url  => \&getPodcastsMenu
+			url  => \&getPodcastMenu
 		}
 	];
 
@@ -101,6 +101,26 @@ sub getPlaylistMenu {
 		sub {
 			my $http = shift;
 			_parsePlaylistDetails( $http, $callback );
+		},
+
+		# Called when no response was received or an error occurred.
+		sub {
+			$log->warn("error: $_[1]");
+			$callback->( [ { name => $_[1], type => 'text' } ] );
+		}
+	)->get($callUrl);
+}
+
+
+sub getPodcastMenu {
+	my ( $client, $callback, $args, $passDict ) = @_;
+
+	my $callUrl = 'https://bff-web-guacamole.musicradio.com/features/podcasts';
+
+	Slim::Networking::SimpleAsyncHTTP->new(
+		sub {
+			my $http = shift;
+			_parsePodcastDetails( $http, $callback );
 		},
 
 		# Called when no response was received or an error occurred.
@@ -156,10 +176,60 @@ sub getStationCatchupItems {
 }
 
 
+sub getPodcastEpisodes {
+	my ( $client, $callback, $args, $passDict ) = @_;
+
+	my $id    = $passDict->{'id'};
+
+	my $callUrl = "https://bff-web-guacamole.musicradio.com/podcasts/$id/";
+
+	$log->debug(' Podcast Url ' .  $callUrl);
+
+	Slim::Networking::SimpleAsyncHTTP->new(
+		sub {
+			my $http = shift;
+			_parsePodcastEpisodes( $http, $callback );
+		},
+
+		# Called when no response was received or an error occurred.
+		sub {
+			$log->warn("error: $_[1]");
+			$callback->( [ { name => $_[1], type => 'text' } ] );
+		}
+	)->get($callUrl);
+}
+
+
 sub _parseCatchUpEpisodes {
 	my ( $http, $callback ) = @_;
 
 	my $JSON = decode_json ${ $http->contentRef };
+
+	my $episodes = $JSON->{episodes};
+
+	my $menu = [];
+
+	for my $item (@$episodes) {
+		my $title = $item->{title} . ' - ' . $item->{description};
+		push  @$menu,
+		  {
+			name => $title,
+			type => 'audio',
+			url         => $item->{streamUrl},
+			image => $item->{imageUrl},
+			on_select   => 'play'
+		  };
+	}
+	$callback->( { items => $menu } );
+	return;
+}
+
+sub _parsePodcastEpisodes {
+	my ( $http, $callback ) = @_;
+
+	my $ctnt = ${ $http->contentRef };
+	$log->debug("episodes : $ctnt");
+	my $JSON = decode_json $ctnt;
 
 	my $episodes = $JSON->{episodes};
 
@@ -193,13 +263,42 @@ sub _parsePlaylistDetails {
 	for my $item (@$blocks) {
 		my $title = $item->{title};
 		my $items = _parsePlaylistItems($item->{items});
-		  push  @$menu,
+		push  @$menu,
 		  {
 			name => $item->{title},
 			type => 'link',
 			items => $items
 		  };
 	}
+	$callback->( { items => $menu } );
+	return;
+}
+
+
+sub _parsePodcastDetails {
+	my ( $http, $callback ) = @_;
+
+	my $JSON = decode_json ${ $http->contentRef };
+
+	my $menu = [];
+
+	my $loop = sub {
+		my $blocks = shift;
+		for my $item (@$blocks) {
+			my $title = $item->{title};
+			my $items = _parsePodcastItems($item->{items});
+			push  @$menu,
+			  {
+				name => $item->{title},
+				type => 'link',
+				items => $items
+			  };
+		}
+	};
+
+	$loop->([$JSON->{heroBlock}]);
+	$loop->($JSON->{blocks});
+
 	$callback->( { items => $menu } );
 	return;
 }
@@ -215,7 +314,7 @@ sub _parsePlaylistItems {
 		push  @$menu,
 		  {
 			name => $item->{title},
-			type => 'audio',
+			type => 'playlist',
 			url     => $stream,
 			image => $item->{image_url},
 			on_select   => 'play'
@@ -223,7 +322,27 @@ sub _parsePlaylistItems {
 	}
 
 	return $menu;
+}
 
+
+sub _parsePodcastItems {
+	my ($items) = @_;
+
+	my $menu = [];
+
+	for my $item (@$items) {		 
+		my $title = $item->{title} . ' - ' . $item->{subtitle};
+		push  @$menu,
+		  {
+			name => $title,
+			type => 'link',
+			url         => \&getPodcastEpisodes,
+			image => $item->{image_url},
+			passthrough =>[ { id => $item->{link}->{id} } ]
+		  };
+	}
+
+	return $menu;
 }
 
 
@@ -311,6 +430,29 @@ sub getCatchUpMenu {
 			$callback->( [ { name => $_[1], type => 'text' } ] );
 		}
 	)->get($callUrl);
+}
+
+
+sub getPlaylistStreamUrl {
+	my ( $id, $cbY, $cbN ) = @_;
+
+	my $callUrl = "https://bff-web-guacamole.musicradio.com/playlists/$id";
+
+	Slim::Networking::SimpleAsyncHTTP->new(
+		sub {
+			my $http = shift;
+			my $JSON = decode_json ${ $http->contentRef };
+			$cbY->($JSON->{streamUrl});
+		},
+
+		# Called when no response was received or an error occurred.
+		sub {
+			$log->warn("error: $_[1]");
+			$cbN->();
+		}
+	)->get($callUrl);
+
+	return;
 }
 
 

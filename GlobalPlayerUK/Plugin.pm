@@ -28,6 +28,7 @@ use Slim::Utils::Log;
 use Slim::Utils::Prefs;
 
 use Plugins::GlobalPlayerUK::GlobalPlayerFeeder;
+use Plugins::GlobalPlayerUK::ProtocolHandler;
 
 my $log = Slim::Utils::Log->addLogCategory(
 	{
