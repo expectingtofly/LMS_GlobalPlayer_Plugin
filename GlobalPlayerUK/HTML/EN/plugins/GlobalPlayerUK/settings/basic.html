@@ -1,6 +1,6 @@
 [% PROCESS settings/header.html %]
 
-[% WRAPPER setting title="PLUGIN_VIRGINRADIO_RADIOMENU" desc="PLUGIN_VIRGINRADIO_RADIOMENU_DESC" %]
+[% WRAPPER setting title="Show in 'Radio' Menu" desc="Select this if you would rather Times Radio is located within the 'Radio' menu rather than the 'My Apps' menu.  Requires LMS restart." %]
 
 <div class="prefDesc">[% "ENABLE" | string %]
     <input name="pref_is_radio" type="checkbox" [% IF prefs.pref_is_radio %] checked [% END %]>

@@ -39,17 +39,27 @@ my $log = Slim::Utils::Log->addLogCategory(
 );
 
 
+my $prefs = preferences('plugin.globalplayeruk');
+
 sub initPlugin {
 	my $class = shift;
 
+	$prefs->init({ is_radio => 0 });
 
 	$class->SUPER::initPlugin(
 		feed   => \&Plugins::GlobalPlayerUK::GlobalPlayerFeeder::toplevel,
 		tag    => 'globalplayeruk',
 		menu   => 'radios',
-		is_app => 1,
+		is_app => $class->can('nonSNApps') && (!($prefs->get('is_radio'))) ? 1 : undef,
 		weight => 1,
 	);
+
+
+    if ( !$::noweb ) {
+		require Plugins::GlobalPlayerUK::Settings;
+		Plugins::GlobalPlayerUK::Settings->new;
+	}
+
 
 
 	return;
@@ -57,5 +67,16 @@ sub initPlugin {
 
 
 sub getDisplayName { return 'PLUGIN_GLOBALPLAYERUK'; }
+
+
+sub playerMenu {
+	my $class =shift;
+
+	if ($prefs->get('is_radio')  || (!($class->can('nonSNApps')))) {		
+		return 'RADIO';
+	}else{		
+		return;
+	}
+}
 
 1;
