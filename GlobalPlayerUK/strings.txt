@@ -1,5 +1,5 @@
 PLUGIN_GLOBALPLAYERUK
 	EN	Global Player (UK)
 
-PLUGIN_VIRGINRADIO_DESC
-	EN	Global Player (UK) - Stations etc
+PLUGIN_GLOBALPLAYERUK_DESC
+	EN	Global Media Stations (Classic FM, Capital, Heart, LBC, Radio X etc) Live, Catchup, Playlists, Podcasts.

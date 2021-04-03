@@ -31,6 +31,9 @@ use Data::Dumper;
 use JSON::XS::VersionOneAndTwo;
 use Digest::MD5 qw(md5_hex);
 
+use POSIX qw(strftime);
+use HTTP::Date;
+
 use Plugins::GlobalPlayerUK::Utilities;
 
 
@@ -84,45 +87,67 @@ sub toplevel {
 
 sub callAPI {
 	my ( $client, $callback, $args, $passDict ) = @_;
+	main::DEBUGLOG && $log->is_debug && $log->debug("++callAPI");
 
 	my $call = $passDict->{'call'};
 	my $callUrl = '';
 	my $parser;
+	my $cacheIndex = '';
 
 	if ($call eq 'LiveMenu') {
 		$callUrl = 'https://bff-web-guacamole.musicradio.com/globalplayer/brands';
 		$parser = \&_parseStationList;
+		$cacheIndex =  $callUrl;
 	} elsif ($call eq 'PlaylistMenu') {
 		$callUrl = 'https://bff-web-guacamole.musicradio.com/features/playlists';
 		$parser = \&_parsePlaylistDetails;
+		$cacheIndex =  $callUrl;
 	} elsif ($call eq 'PodcastMenu') {
 		$callUrl = 'https://bff-web-guacamole.musicradio.com/features/podcasts';
-		$parser = \&_parsePodcastDetails;	
+		$parser = \&_parsePodcastDetails;
+		$cacheIndex =  $callUrl;
 	} elsif ($call eq 'CatchUpMenu') {
-		$callUrl = 'https://bff-web-guacamole.musicradio.com/globalplayer/brands';;
+		$callUrl = 'https://bff-web-guacamole.musicradio.com/globalplayer/brands';
 		$parser = \&_parseCatchUpStationList;
+		$cacheIndex =  $call;
 	} elsif ($call eq 'StationCatchUps') {
 		my $station    = $passDict->{'station'};
 		$callUrl = "https://bff-web-guacamole.musicradio.com/globalplayer/catchups/$station/uk";
-		$parser = \&_parseCatchUpList;	
+		$parser = \&_parseCatchUpList;
+		$cacheIndex =  $callUrl;
 	} elsif ($call eq 'StationCatchupItems') {
 		my $id    = $passDict->{'id'};
 		$callUrl = "https://bff-web-guacamole.musicradio.com/globalplayer/catchups/$id";
 		$parser = \&_parseCatchUpEpisodes;
+		$cacheIndex =  $callUrl;
 	} elsif ($call eq 'PodcastEpisodes') {
 		my $id    = $passDict->{'id'};
 		$callUrl = "https://bff-web-guacamole.musicradio.com/podcasts/$id/";
 		$parser = \&_parsePodcastEpisodes;
+		$cacheIndex =  $callUrl;
+	} elsif ($call eq 'PodcastSearch') {		
+		my $searchstr = $args->{'search'};
+		$callUrl = 'https://bff-web-guacamole.musicradio.com/podcasts/search/?query=' . URI::Escape::uri_escape_utf8($searchstr);
+		$parser = \&_parsePodcastSearchResults;
+		$cacheIndex =  $callUrl;
 	} else {
 		$log->error("No API call for $call");
 		return;
 	}
 
+	if (my $menu = _getCachedMenu($cacheIndex)) {
+		main::INFOLOG && $log->is_info && $log->info("Getting Menu from cache for $cacheIndex");
+		_renderMenuCodeRefs($menu);
+		$callback->( { items => $menu } );
+		return;
+	}
+
+	main::DEBUGLOG && $log->is_debug && $log->debug("call URL $callUrl");
 
 	Slim::Networking::SimpleAsyncHTTP->new(
 		sub {
 			my $http = shift;
-			$parser->( $http, $callback );
+			$parser->( $http, $callback, $cacheIndex );
 		},
 
 		# Called when no response was received or an error occurred.
@@ -131,11 +156,14 @@ sub callAPI {
 			$callback->( [ { name => $_[1], type => 'text' } ] );
 		}
 	)->get($callUrl);
+	main::DEBUGLOG && $log->is_debug && $log->debug("--callAPI");
 	return;
 }
 
+
 sub _parseCatchUpEpisodes {
-	my ( $http, $callback ) = @_;
+	my ( $http, $callback, $cacheIndex ) = @_;
+	main::DEBUGLOG && $log->is_debug && $log->debug("++_parseCatchUpEpisodes");
 
 	my $JSON = decode_json ${ $http->contentRef };
 
@@ -144,7 +172,11 @@ sub _parseCatchUpEpisodes {
 	my $menu = [];
 
 	for my $item (@$episodes) {
-		my $title = $item->{title} . ' - ' . $item->{description};
+		my $stdat = str2time( $item->{'startDate'} );
+		my $strfdte = strftime( '%A %d/%m ', localtime($stdat) );
+		my $title = $strfdte . $item->{title} . ' - ' . $item->{description};
+
+		
 		push  @$menu,
 		  {
 			name => $title,
@@ -154,13 +186,16 @@ sub _parseCatchUpEpisodes {
 			on_select   => 'play'
 		  };
 	}
+	_cacheMenu($cacheIndex, $menu, 600);
 	$callback->( { items => $menu } );
+	main::DEBUGLOG && $log->is_debug && $log->debug("--_parseCatchUpEpisodes");
 	return;
 }
 
 
 sub _parsePodcastEpisodes {
-	my ( $http, $callback ) = @_;
+	my ( $http, $callback, $cacheIndex ) = @_;
+	main::DEBUGLOG && $log->is_debug && $log->debug("++_parsePodcastEpisodes");
 
 	my $ctnt = ${ $http->contentRef };
 	$log->debug("episodes : $ctnt");
@@ -171,7 +206,10 @@ sub _parsePodcastEpisodes {
 	my $menu = [];
 
 	for my $item (@$episodes) {
-		my $title = $item->{title} . ' - ' . $item->{description};
+		
+		my $stdat = str2time( $item->{'pubDate'} );
+		my $strfdte = strftime( '%d/%m/%y ', localtime($stdat) );
+		my $title = $strfdte . $item->{title};
 		push  @$menu,
 		  {
 			name => $title,
@@ -181,13 +219,16 @@ sub _parsePodcastEpisodes {
 			on_select   => 'play'
 		  };
 	}
+	_cacheMenu($cacheIndex, $menu, 600);
 	$callback->( { items => $menu } );
+	main::DEBUGLOG && $log->is_debug && $log->debug("--_parsePodcastEpisodes");
 	return;
 }
 
 
 sub _parsePlaylistDetails {
-	my ( $http, $callback ) = @_;
+	my ( $http, $callback, $cacheIndex ) = @_;
+	main::DEBUGLOG && $log->is_debug && $log->debug("++_parsePlaylistDetails");
 
 	my $JSON = decode_json ${ $http->contentRef };
 
@@ -205,17 +246,57 @@ sub _parsePlaylistDetails {
 			items => $items
 		  };
 	}
+	_cacheMenu($cacheIndex, $menu, 600);
 	$callback->( { items => $menu } );
+	main::DEBUGLOG && $log->is_debug && $log->debug("--_parsePlaylistDetails");
 	return;
 }
 
 
+sub _parsePodcastSearchResults {	
+	my ( $http, $callback, $cacheIndex ) = @_;
+	main::DEBUGLOG && $log->is_debug && $log->debug("++_parsePodcastSearchResults");	
+
+	my $JSON = decode_json ${ $http->contentRef };
+
+	my $podcasts = $JSON->{podcasts};
+
+	my $menu = [];
+
+	for my $item (@$podcasts) {
+		my $title = $item->{title};				
+		push  @$menu,
+		  {
+			name => $title,
+			type => 'link',
+			url         => \&callAPI,
+			image => $item->{imageUrl},
+			passthrough =>[ { call => 'PodcastEpisodes', id => $item->{id}, codeRef => 'callAPI' } ]
+		  };
+	}	
+	$callback->( { items => $menu } );
+	main::DEBUGLOG && $log->is_debug && $log->debug("--_parsePodcastSearchResults");
+	return;
+}
+
+
+
 sub _parsePodcastDetails {
-	my ( $http, $callback ) = @_;
+	my ( $http, $callback, $cacheIndex ) = @_;
+	main::DEBUGLOG && $log->is_debug && $log->debug("++_parsePodcastDetails");
 
 	my $JSON = decode_json ${ $http->contentRef };
 
 	my $menu = [];
+
+	push @$menu,{
+
+		name        => 'Podcast Search',
+		type        => 'search',
+		url         => '',
+		passthrough => [ { call => 'PodcastSearch', codeRef => 'callAPI' } ]
+
+	};
 
 	my $loop = sub {
 		my $blocks = shift;
@@ -233,14 +314,18 @@ sub _parsePodcastDetails {
 
 	$loop->([$JSON->{heroBlock}]);
 	$loop->($JSON->{blocks});
-
+	
+	_cacheMenu($cacheIndex, $menu, 600);
+	_renderMenuCodeRefs($menu);
 	$callback->( { items => $menu } );
+	main::DEBUGLOG && $log->is_debug && $log->debug("--_parsePodcastDetails");
 	return;
 }
 
 
 sub _parsePlaylistItems {
 	my ($items) = @_;
+	main::DEBUGLOG && $log->is_debug && $log->debug("++_parsePlaylistItems");
 
 	my $menu = [];
 
@@ -255,13 +340,14 @@ sub _parsePlaylistItems {
 			on_select   => 'play'
 		  };
 	}
-
+    main::DEBUGLOG && $log->is_debug && $log->debug("--_parsePlaylistItems");
 	return $menu;
 }
 
 
 sub _parsePodcastItems {
 	my ($items) = @_;
+	main::DEBUGLOG && $log->is_debug && $log->debug("++_parsePodcastItems");
 
 	my $menu = [];
 
@@ -271,25 +357,30 @@ sub _parsePodcastItems {
 		  {
 			name => $title,
 			type => 'link',
-			url         => \&callAPI,
+			url         => '',
 			image => $item->{image_url},
-			passthrough =>[ { call => 'PodcastEpisodes', id => $item->{link}->{id} } ]
+			passthrough =>[ { call => 'PodcastEpisodes', id => $item->{link}->{id}, codeRef => 'callAPI' } ]
 		  };
 	}
-
+	main::DEBUGLOG && $log->is_debug && $log->debug("--_parsePodcastItems");
 	return $menu;
 }
 
 
 sub _parseStationList {
-	my ( $http, $callback ) = @_;
+	my ( $http, $callback, $cacheIndex ) = @_;
+	main::DEBUGLOG && $log->is_debug && $log->debug("++_parseStationList");
 
 	my $JSON = decode_json ${ $http->contentRef };
 
 	my $menu = [];
 
 	for my $item (@$JSON) {
-		my $title = $item->{name} . ' - ' . $item->{tagline};
+		my $tagline = '';		
+		if (length $item->{tagline}) {			
+			$tagline = ' - ' . $item->{tagline};
+		}
+		my $title = $item->{name} . $tagline;
 		push  @$menu,
 		  {
 			name => $title,
@@ -299,13 +390,16 @@ sub _parseStationList {
 			on_select   => 'play'
 		  };
 	}
+	_cacheMenu($cacheIndex, $menu, 600);
 	$callback->( { items => $menu } );
+	main::DEBUGLOG && $log->is_debug && $log->debug("--_parseStationList");
 	return;
 }
 
 
 sub _parseCatchUpList {
-	my ( $http, $callback ) = @_;
+	my ( $http, $callback, $cacheIndex ) = @_;
+	main::DEBUGLOG && $log->is_debug && $log->debug("++_parseCatchUpList");
 
 	my $JSON = decode_json ${ $http->contentRef };
 
@@ -316,18 +410,22 @@ sub _parseCatchUpList {
 		  {
 			name => $item->{title},
 			type => 'link',
-			url         => \&callAPI,
+			url         => '',
 			image => $item->{imageUrl},
-			passthrough =>[ { call => 'StationCatchupItems', id => $item->{id}} ]
+			passthrough =>[ { call => 'StationCatchupItems', id => $item->{id}, codeRef => 'callAPI'} ]
 		  };
 	}
+	_cacheMenu($cacheIndex, $menu, 600);
+	_renderMenuCodeRefs($menu);
 	$callback->( { items => $menu } );
+	main::DEBUGLOG && $log->is_debug && $log->debug("--_parseCatchUpList");
 	return;
 }
 
 
 sub _parseCatchUpStationList {
-	my ( $http, $callback ) = @_;
+	my ( $http, $callback, $cacheIndex ) = @_;
+	main::DEBUGLOG && $log->is_debug && $log->debug("++_parseCatchUpStationList");
 
 	my $JSON = decode_json ${ $http->contentRef };
 
@@ -338,17 +436,22 @@ sub _parseCatchUpStationList {
 		  {
 			name => $item->{name},
 			type => 'link',
-			url         => \&callAPI,
+			url         => '',
 			image => $item->{brandLogo},
-			passthrough =>[ { call => 'StationCatchUps', station => $item->{brandSlug}} ]
+			passthrough =>[ { call => 'StationCatchUps', station => $item->{brandSlug},  codeRef => 'callAPI'} ]
 		  };
 	}
+	_cacheMenu($cacheIndex, $menu, 600);
+	_renderMenuCodeRefs($menu);
 	$callback->( { items => $menu } );
+	main::DEBUGLOG && $log->is_debug && $log->debug("--_parseCatchUpStationList");
 	return;
 }
 
+
 sub getPlaylistStreamUrl {
 	my ( $id, $cbY, $cbN ) = @_;
+	main::DEBUGLOG && $log->is_debug && $log->debug("++getPlaylistStreamUrl");
 
 	my $callUrl = "https://bff-web-guacamole.musicradio.com/playlists/$id";
 
@@ -366,12 +469,13 @@ sub getPlaylistStreamUrl {
 		}
 	)->get($callUrl);
 
+	main::DEBUGLOG && $log->is_debug && $log->debug("--getPlaylistStreamUrl");
 	return;
 }
 
 
 sub _getCachedMenu {
-	my ( $url ) = @_;
+	my ($url) = @_;
 	main::DEBUGLOG && $log->is_debug && $log->debug("++_getCachedMenu");
 
 	my $cacheKey = 'GP:' . md5_hex($url);
@@ -397,5 +501,27 @@ sub _cacheMenu {
 	return;
 }
 
+
+sub _renderMenuCodeRefs {
+	my $menu = shift;
+	main::DEBUGLOG && $log->is_debug && $log->debug("++_renderMenuCodeRefs");
+
+	for my $menuItem (@$menu) {
+		my $codeRef = $menuItem->{passthrough}[0]->{'codeRef'};
+		if ( defined $codeRef ) {
+			if ( $codeRef eq 'callAPI' ) {
+				$menuItem->{'url'} = \&callAPI;
+			}else {
+				$log->error("Unknown Code Reference : $codeRef");
+			}
+		}
+		if (defined $menuItem->{'items'}) {
+			_renderMenuCodeRefs($menuItem->{'items'});
+		}
+
+	}
+	main::DEBUGLOG && $log->is_debug && $log->debug("--_renderMenuCodeRefs");
+	return;
+}
 
 1;

@@ -3,8 +3,8 @@
 <extension>
 	<name>PLUGIN_GLOBALPLAYERUK</name>
 	<module>Plugins::GlobalPlayerUK::Plugin</module>
-	<version>0.0.39</version>
-	<description>PLUGIN_GlobalPlayer_DESC</description>
+	<version>0.0.52</version>
+	<description>PLUGIN_GLOBALPLAYERUK_DESC</description>
 	<creator>ExpectingToFly</creator>	
 	<homepageURL>https://github.com/expectingtofly/LMS_GlobalPlayer_Plugin</homepageURL>
 	<icon>plugins/GlobalPlayerUK/html/images/GlobalPlayerUK_Plugin_svg.png</icon>
