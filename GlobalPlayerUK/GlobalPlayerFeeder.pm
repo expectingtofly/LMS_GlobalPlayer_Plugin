@@ -31,6 +31,8 @@ use Data::Dumper;
 use JSON::XS::VersionOneAndTwo;
 use Digest::MD5 qw(md5_hex);
 
+use Plugins::GlobalPlayerUK::Utilities;
+
 
 my $log = logger('plugin.globalplayeruk');
 my $prefs = preferences('plugin.globalplayeruk');
@@ -49,24 +51,28 @@ sub toplevel {
 			name => 'Radio',
 			type => 'link',
 			url => \&callAPI,
+			image => Plugins::GlobalPlayerUK::Utilities::IMG_RADIO,
 			passthrough =>[ { call => 'LiveMenu' } ]
 		},
 		{
 			name => 'Catch Up',
 			type => 'link',
 			url  => \&callAPI,
+			image => Plugins::GlobalPlayerUK::Utilities::IMG_CATCHUP,
 			passthrough =>[ { call => 'CatchUpMenu' } ]
 		},
 		{
 			name => 'Playlists',
 			type => 'link',
 			url  => \&callAPI,
+			image => Plugins::GlobalPlayerUK::Utilities::IMG_PLAYLISTS,
 			passthrough =>[ { call => 'PlaylistMenu' } ]
 		},
 		{
 			name => 'Podcasts',
 			type => 'link',
 			url  => \&callAPI,
+			image => Plugins::GlobalPlayerUK::Utilities::IMG_PODCASTS,
 			passthrough =>[ { call => 'PodcastMenu' } ]
 		}
 	];
@@ -365,7 +371,7 @@ sub getPlaylistStreamUrl {
 
 
 sub _getCachedMenu {
-	my $url = shift;
+	my ( $url ) = @_;
 	main::DEBUGLOG && $log->is_debug && $log->debug("++_getCachedMenu");
 
 	my $cacheKey = 'GP:' . md5_hex($url);
