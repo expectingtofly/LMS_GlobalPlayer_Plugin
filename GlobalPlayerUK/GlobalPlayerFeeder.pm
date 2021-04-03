@@ -48,22 +48,26 @@ sub toplevel {
 		{
 			name => 'Radio',
 			type => 'link',
-			url => \&getLiveMenu
+			url => \&callAPI,
+			passthrough =>[ { call => 'LiveMenu' } ]
 		},
 		{
 			name => 'Catch Up',
 			type => 'link',
-			url  => \&getCatchUpMenu
+			url  => \&callAPI,
+			passthrough =>[ { call => 'CatchUpMenu' } ]
 		},
 		{
 			name => 'Playlists',
 			type => 'link',
-			url  => \&getPlaylistMenu
+			url  => \&callAPI,
+			passthrough =>[ { call => 'PlaylistMenu' } ]
 		},
 		{
 			name => 'Podcasts',
 			type => 'link',
-			url  => \&getPodcastMenu
+			url  => \&callAPI,
+			passthrough =>[ { call => 'PodcastMenu' } ]
 		}
 	];
 
@@ -72,15 +76,47 @@ sub toplevel {
 }
 
 
-sub getLiveMenu {
+sub callAPI {
 	my ( $client, $callback, $args, $passDict ) = @_;
 
-	my $callUrl = 'https://bff-web-guacamole.musicradio.com/globalplayer/brands';
+	my $call = $passDict->{'call'};
+	my $callUrl = '';
+	my $parser;
+
+	if ($call eq 'LiveMenu') {
+		$callUrl = 'https://bff-web-guacamole.musicradio.com/globalplayer/brands';
+		$parser = \&_parseStationList;
+	} elsif ($call eq 'PlaylistMenu') {
+		$callUrl = 'https://bff-web-guacamole.musicradio.com/features/playlists';
+		$parser = \&_parsePlaylistDetails;
+	} elsif ($call eq 'PodcastMenu') {
+		$callUrl = 'https://bff-web-guacamole.musicradio.com/features/podcasts';
+		$parser = \&_parsePodcastDetails;	
+	} elsif ($call eq 'CatchUpMenu') {
+		$callUrl = 'https://bff-web-guacamole.musicradio.com/globalplayer/brands';;
+		$parser = \&_parseCatchUpStationList;
+	} elsif ($call eq 'StationCatchUps') {
+		my $station    = $passDict->{'station'};
+		$callUrl = "https://bff-web-guacamole.musicradio.com/globalplayer/catchups/$station/uk";
+		$parser = \&_parseCatchUpList;	
+	} elsif ($call eq 'StationCatchupItems') {
+		my $id    = $passDict->{'id'};
+		$callUrl = "https://bff-web-guacamole.musicradio.com/globalplayer/catchups/$id";
+		$parser = \&_parseCatchUpEpisodes;
+	} elsif ($call eq 'PodcastEpisodes') {
+		my $id    = $passDict->{'id'};
+		$callUrl = "https://bff-web-guacamole.musicradio.com/podcasts/$id/";
+		$parser = \&_parsePodcastEpisodes;
+	} else {
+		$log->error("No API call for $call");
+		return;
+	}
+
 
 	Slim::Networking::SimpleAsyncHTTP->new(
 		sub {
 			my $http = shift;
-			_parseStationList( $http, $callback );
+			$parser->( $http, $callback );
 		},
 
 		# Called when no response was received or an error occurred.
@@ -89,116 +125,8 @@ sub getLiveMenu {
 			$callback->( [ { name => $_[1], type => 'text' } ] );
 		}
 	)->get($callUrl);
+	return;
 }
-
-
-sub getPlaylistMenu {
-	my ( $client, $callback, $args, $passDict ) = @_;
-
-	my $callUrl = 'https://bff-web-guacamole.musicradio.com/features/playlists';
-
-	Slim::Networking::SimpleAsyncHTTP->new(
-		sub {
-			my $http = shift;
-			_parsePlaylistDetails( $http, $callback );
-		},
-
-		# Called when no response was received or an error occurred.
-		sub {
-			$log->warn("error: $_[1]");
-			$callback->( [ { name => $_[1], type => 'text' } ] );
-		}
-	)->get($callUrl);
-}
-
-
-sub getPodcastMenu {
-	my ( $client, $callback, $args, $passDict ) = @_;
-
-	my $callUrl = 'https://bff-web-guacamole.musicradio.com/features/podcasts';
-
-	Slim::Networking::SimpleAsyncHTTP->new(
-		sub {
-			my $http = shift;
-			_parsePodcastDetails( $http, $callback );
-		},
-
-		# Called when no response was received or an error occurred.
-		sub {
-			$log->warn("error: $_[1]");
-			$callback->( [ { name => $_[1], type => 'text' } ] );
-		}
-	)->get($callUrl);
-}
-
-
-sub getStationCatchUps {
-	my ( $client, $callback, $args, $passDict ) = @_;
-
-	my $station    = $passDict->{'station'};
-
-	my $callUrl = "https://bff-web-guacamole.musicradio.com/globalplayer/catchups/$station/uk";
-
-	Slim::Networking::SimpleAsyncHTTP->new(
-		sub {
-			my $http = shift;
-			_parseCatchUpList( $http, $callback );
-		},
-
-		# Called when no response was received or an error occurred.
-		sub {
-			$log->warn("error: $_[1]");
-			$callback->( [ { name => $_[1], type => 'text' } ] );
-		}
-	)->get($callUrl);
-}
-
-
-sub getStationCatchupItems {
-	my ( $client, $callback, $args, $passDict ) = @_;
-
-	my $id    = $passDict->{'id'};
-
-	my $callUrl = "https://bff-web-guacamole.musicradio.com/globalplayer/catchups/$id";
-
-	Slim::Networking::SimpleAsyncHTTP->new(
-		sub {
-			my $http = shift;
-			_parseCatchUpEpisodes( $http, $callback );
-		},
-
-		# Called when no response was received or an error occurred.
-		sub {
-			$log->warn("error: $_[1]");
-			$callback->( [ { name => $_[1], type => 'text' } ] );
-		}
-	)->get($callUrl);
-}
-
-
-sub getPodcastEpisodes {
-	my ( $client, $callback, $args, $passDict ) = @_;
-
-	my $id    = $passDict->{'id'};
-
-	my $callUrl = "https://bff-web-guacamole.musicradio.com/podcasts/$id/";
-
-	$log->debug(' Podcast Url ' .  $callUrl);
-
-	Slim::Networking::SimpleAsyncHTTP->new(
-		sub {
-			my $http = shift;
-			_parsePodcastEpisodes( $http, $callback );
-		},
-
-		# Called when no response was received or an error occurred.
-		sub {
-			$log->warn("error: $_[1]");
-			$callback->( [ { name => $_[1], type => 'text' } ] );
-		}
-	)->get($callUrl);
-}
-
 
 sub _parseCatchUpEpisodes {
 	my ( $http, $callback ) = @_;
@@ -223,6 +151,7 @@ sub _parseCatchUpEpisodes {
 	$callback->( { items => $menu } );
 	return;
 }
+
 
 sub _parsePodcastEpisodes {
 	my ( $http, $callback ) = @_;
@@ -330,15 +259,15 @@ sub _parsePodcastItems {
 
 	my $menu = [];
 
-	for my $item (@$items) {		 
+	for my $item (@$items) {
 		my $title = $item->{title} . ' - ' . $item->{subtitle};
 		push  @$menu,
 		  {
 			name => $title,
 			type => 'link',
-			url         => \&getPodcastEpisodes,
+			url         => \&callAPI,
 			image => $item->{image_url},
-			passthrough =>[ { id => $item->{link}->{id} } ]
+			passthrough =>[ { call => 'PodcastEpisodes', id => $item->{link}->{id} } ]
 		  };
 	}
 
@@ -381,9 +310,9 @@ sub _parseCatchUpList {
 		  {
 			name => $item->{title},
 			type => 'link',
-			url         => \&getStationCatchupItems,
+			url         => \&callAPI,
 			image => $item->{imageUrl},
-			passthrough =>[ { id => $item->{id}} ]
+			passthrough =>[ { call => 'StationCatchupItems', id => $item->{id}} ]
 		  };
 	}
 	$callback->( { items => $menu } );
@@ -403,35 +332,14 @@ sub _parseCatchUpStationList {
 		  {
 			name => $item->{name},
 			type => 'link',
-			url         => \&getStationCatchUps,
+			url         => \&callAPI,
 			image => $item->{brandLogo},
-			passthrough =>[ { station => $item->{brandSlug}} ]
+			passthrough =>[ { call => 'StationCatchUps', station => $item->{brandSlug}} ]
 		  };
 	}
 	$callback->( { items => $menu } );
 	return;
 }
-
-
-sub getCatchUpMenu {
-	my ( $client, $callback, $args, $passDict ) = @_;
-
-	my $callUrl = 'https://bff-web-guacamole.musicradio.com/globalplayer/brands';
-
-	Slim::Networking::SimpleAsyncHTTP->new(
-		sub {
-			my $http = shift;
-			_parseCatchUpStationList( $http, $callback );
-		},
-
-		# Called when no response was received or an error occurred.
-		sub {
-			$log->warn("error: $_[1]");
-			$callback->( [ { name => $_[1], type => 'text' } ] );
-		}
-	)->get($callUrl);
-}
-
 
 sub getPlaylistStreamUrl {
 	my ( $id, $cbY, $cbN ) = @_;
