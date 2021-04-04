@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+
+<extension>
+	<name>PLUGIN_GLOBALPLAYERUK</name>
+	<module>Plugins::GlobalPlayerUK::Plugin</module>
+	<version>1.0.0</version>
+	<description>PLUGIN_GLOBALPLAYERUK_DESC</description>
+	<creator>ExpectingToFly</creator>	
+	<homepageURL>https://github.com/expectingtofly/LMS_GlobalPlayer_Plugin</homepageURL>
+	<icon>plugins/GlobalPlayerUK/html/images/GlobalPlayerUK_Plugin_svg.png</icon>
+	<defaultState>enabled</defaultState>
+	<targetApplication>
+		<id>SlimServer</id>
+		<minVersion>7.9</minVersion>
+        <maxVersion>*</maxVersion>
+	</targetApplication>
+	<optionsURL>plugins/GlobalPlayerUK/settings/basic.html</optionsURL>	
+</extension>

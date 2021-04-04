@@ -1,0 +1,5 @@
+PLUGIN_GLOBALPLAYERUK
+	EN	Global Player (UK)
+
+PLUGIN_GLOBALPLAYERUK_DESC
+	EN	Global Radio's UK Stations (Classic FM, Capital, Heart, LBC, Radio X etc) Live, Catchup, Playlists, Podcasts.
