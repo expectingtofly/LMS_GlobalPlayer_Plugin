@@ -412,6 +412,9 @@ sub _parseCatchUpList {
 			type => 'link',
 			url         => '',
 			image => $item->{imageUrl},
+			favorites_url => 'globalplayer://_catchup_' . $item->{id},
+			favorites_type	=> 'link',
+			playlist => 'globalplayer://_catchup_' . $item->{id},
 			passthrough =>[ { call => 'StationCatchupItems', id => $item->{id}, codeRef => 'callAPI'} ]
 		  };
 	}
