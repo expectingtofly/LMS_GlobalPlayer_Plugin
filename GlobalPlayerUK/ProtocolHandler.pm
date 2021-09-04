@@ -37,9 +37,7 @@ sub explodePlaylist {
 	$log->debug("Entering with $uri");
 
 	if ( $uri =~ /^globalplayer:/gm ) {
-		$log->debug("In 1");
 		if ( $uri =~ /_playlist_/gm){
-			$log->debug("In 2");
 			my $id = _getItemId($uri);
 			Plugins::GlobalPlayerUK::GlobalPlayerFeeder::getPlaylistStreamUrl(
 				$id,
@@ -54,7 +52,18 @@ sub explodePlaylist {
 					$cb->([$uri]);
 				}
 			);
-		} else {
+		} elsif ( $uri =~ /_catchup_/gm) {
+			if ($main::VERSION lt '8.2.0') {
+				$log->warn("Global Player Favourites only supported in LMS 8.2.0 and greater");
+				$cb->(['Global Player Favourites require LMS 8.2.0 or greater']);
+				return;
+			}
+
+			my $id = _getItemId($uri);
+			Plugins::GlobalPlayerUK::GlobalPlayerFeeder::callAPI(undef, $cb, undef, { call => 'StationCatchupItems', id => $id } );
+
+
+		}else {
 			$cb->([$uri]);
 		}
 
