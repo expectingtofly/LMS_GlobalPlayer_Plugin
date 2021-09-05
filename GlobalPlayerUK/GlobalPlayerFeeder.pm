@@ -271,6 +271,9 @@ sub _parsePodcastSearchResults {
 			type => 'link',
 			url         => \&callAPI,
 			image => $item->{imageUrl},
+			favorites_url => 'globalplayer://_podcast_' . $item->{id},
+			favorites_type	=> 'link',
+			playlist => 'globalplayer://_podcast_' . $item->{id},
 			passthrough =>[ { call => 'PodcastEpisodes', id => $item->{id}, codeRef => 'callAPI' } ]
 		  };
 	}	
@@ -359,6 +362,9 @@ sub _parsePodcastItems {
 			type => 'link',
 			url         => '',
 			image => $item->{image_url},
+			favorites_url => 'globalplayer://_podcast_' . $item->{link}->{id},
+			favorites_type	=> 'link',
+			playlist => 'globalplayer://_podcast_' . $item->{link}->{id},
 			passthrough =>[ { call => 'PodcastEpisodes', id => $item->{link}->{id}, codeRef => 'callAPI' } ]
 		  };
 	}
