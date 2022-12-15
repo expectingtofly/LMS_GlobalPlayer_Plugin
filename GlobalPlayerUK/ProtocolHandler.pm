@@ -25,6 +25,7 @@ use base qw(Slim::Player::Protocols::HTTPS);
 
 use Slim::Utils::Log;
 use Plugins::GlobalPlayerUK::GlobalPlayerFeeder;
+use Plugins::GlobalPlayerUK::WebSocketHandler;
 
 Slim::Player::ProtocolHandlers->registerHandler('globalplayer', __PACKAGE__);
 
@@ -43,7 +44,7 @@ sub explodePlaylist {
 				$id,
 				sub {
 					my $stream = shift;
-					
+
 					$cb->([$stream]);
 				},
 				sub {
@@ -51,6 +52,42 @@ sub explodePlaylist {
 					$cb->([$uri]);
 				}
 			);
+		} elsif ( $uri =~ /_live_/ ) {
+
+			$log->debug("Doing Live");
+			my $heraldid = _getItemId($uri);
+			$log->debug("herald id $heraldid");
+			
+			my $ws = Plugins::GlobalPlayerUK::WebSocketHandler->new();
+			$log->debug("have object");
+
+			$ws->wsconnect(
+				'wss://metadata.musicradio.com/v2/now-playing',
+				sub {#success
+					$log->error("Connected");
+					$ws->wssend('{"actions":[{"type":"subscribe","service":"' . $heraldid . '"}]}');
+					$log->error("Initiate read");
+					$ws->wsreceive(
+						0.2,
+						sub {
+							$log->error("Read succeeded");
+						},
+						sub {
+							$log->error("Read failed");
+						}
+					);
+				},
+				sub {#fail
+					$log->error("Failed to connect to web socket");
+				},
+				sub {#Read
+					my $readin = shift;
+					$log->error("We have read ". $readin);
+					$ws->wssend('{"actions":[{"type":"unsubscribe","stream_id":"' . $heraldid . '"}]}');
+					$ws->wsclose();
+				}
+			);
+
 		} elsif ( $uri =~ /_catchup_|_podcast_/) {
 			if ($main::VERSION lt '8.2.0') {
 				$log->warn("Global Player Favourites only supported in LMS 8.2.0 and greater");
@@ -60,7 +97,7 @@ sub explodePlaylist {
 
 			my $id = _getItemId($uri);
 
-			if ( $uri =~ /_catchup_/ ) {										
+			if ( $uri =~ /_catchup_/ ) {
 				Plugins::GlobalPlayerUK::GlobalPlayerFeeder::callAPI(undef, $cb, undef, { call => 'StationCatchupItems', id => $id } );
 			} else { #podcast
 				Plugins::GlobalPlayerUK::GlobalPlayerFeeder::callAPI(undef, $cb, undef, { call => 'PodcastEpisodes', id => $id } );
