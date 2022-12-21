@@ -393,8 +393,7 @@ sub _parseStationList {
 		push  @$menu,
 		  {
 			name => $title,
-			type => 'audio',
-			#url         => $item->{streamUrl},
+			type => 'audio',			
 			url    =>  'globalplayer://_live_' . $item->{heraldId},
 			image => $item->{brandLogo},
 			on_select   => 'play'
@@ -433,7 +432,7 @@ sub _parseFullStationList {
 		  {
 			name => $title,
 			type => 'audio',
-			url         => $item->{streamUrl},			
+			url    =>  'globalplayer://_live_' . $item->{heraldId},		
 			on_select   => 'play'
 		  };
 	}

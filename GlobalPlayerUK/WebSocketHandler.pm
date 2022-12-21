@@ -35,8 +35,7 @@ my $log = logger('plugin.globalplayeruk');
 
 
 sub new {
-	my $class = shift;
-	my $self = {};
+	my $class = shift;	
 	my $self = {
 		client     => 0,         
 		tcp_socket   => 0,       
