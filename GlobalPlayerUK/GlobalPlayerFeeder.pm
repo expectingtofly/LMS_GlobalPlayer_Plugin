@@ -65,7 +65,7 @@ sub toplevel {
 			passthrough =>[ { call => 'CatchUpMenu' } ]
 		},
 		{
-			name => 'Playlists',
+			name => 'Live Playlists',
 			type => 'link',
 			url  => \&callAPI,
 			image => Plugins::GlobalPlayerUK::Utilities::IMG_PLAYLISTS,
@@ -408,6 +408,7 @@ sub _parseStationList {
 		passthrough =>[ { call => 'RegionalLiveMenu', codeRef => 'callAPI'} ]
 	  };
 	_cacheMenu($cacheIndex, $menu, 600);
+	_renderMenuCodeRefs($menu);
 	$callback->( { items => $menu } );
 	main::DEBUGLOG && $log->is_debug && $log->debug("--_parseStationList");
 	return;
