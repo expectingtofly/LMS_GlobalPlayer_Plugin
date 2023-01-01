@@ -65,7 +65,7 @@ sub toplevel {
 			passthrough =>[ { call => 'CatchUpMenu' } ]
 		},
 		{
-			name => 'Playlists',
+			name => 'Live Playlists',
 			type => 'link',
 			url  => \&callAPI,
 			image => Plugins::GlobalPlayerUK::Utilities::IMG_PLAYLISTS,
@@ -98,6 +98,10 @@ sub callAPI {
 		$callUrl = 'https://bff-web-guacamole.musicradio.com/globalplayer/brands';
 		$parser = \&_parseStationList;
 		$cacheIndex =  $callUrl;
+	} elsif ($call eq 'RegionalLiveMenu') {
+		$callUrl = 'https://bff-web-guacamole.musicradio.com/stations/';
+		$parser = \&_parseFullStationList;
+		$cacheIndex =  $callUrl;
 	} elsif ($call eq 'PlaylistMenu') {
 		$callUrl = 'https://bff-web-guacamole.musicradio.com/features/playlists';
 		$parser = \&_parsePlaylistDetails;
@@ -125,7 +129,7 @@ sub callAPI {
 		$callUrl = "https://bff-web-guacamole.musicradio.com/podcasts/$id/";
 		$parser = \&_parsePodcastEpisodes;
 		$cacheIndex =  $callUrl;
-	} elsif ($call eq 'PodcastSearch') {		
+	} elsif ($call eq 'PodcastSearch') {
 		my $searchstr = $args->{'search'};
 		$callUrl = 'https://bff-web-guacamole.musicradio.com/podcasts/search/?query=' . URI::Escape::uri_escape_utf8($searchstr);
 		$parser = \&_parsePodcastSearchResults;
@@ -176,7 +180,7 @@ sub _parseCatchUpEpisodes {
 		my $strfdte = strftime( '%A %d/%m ', localtime($stdat) );
 		my $title = $strfdte . $item->{title} . ' - ' . $item->{description};
 
-		
+
 		push  @$menu,
 		  {
 			name => $title,
@@ -206,7 +210,7 @@ sub _parsePodcastEpisodes {
 	my $menu = [];
 
 	for my $item (@$episodes) {
-		
+
 		my $stdat = str2time( $item->{'pubDate'} );
 		my $strfdte = strftime( '%d/%m/%y ', localtime($stdat) );
 		my $title = $strfdte . $item->{title};
@@ -253,9 +257,9 @@ sub _parsePlaylistDetails {
 }
 
 
-sub _parsePodcastSearchResults {	
+sub _parsePodcastSearchResults {
 	my ( $http, $callback, $cacheIndex ) = @_;
-	main::DEBUGLOG && $log->is_debug && $log->debug("++_parsePodcastSearchResults");	
+	main::DEBUGLOG && $log->is_debug && $log->debug("++_parsePodcastSearchResults");
 
 	my $JSON = decode_json ${ $http->contentRef };
 
@@ -264,7 +268,7 @@ sub _parsePodcastSearchResults {
 	my $menu = [];
 
 	for my $item (@$podcasts) {
-		my $title = $item->{title};				
+		my $title = $item->{title};
 		push  @$menu,
 		  {
 			name => $title,
@@ -276,12 +280,11 @@ sub _parsePodcastSearchResults {
 			playlist => 'globalplayer://_podcast_' . $item->{id},
 			passthrough =>[ { call => 'PodcastEpisodes', id => $item->{id}, codeRef => 'callAPI' } ]
 		  };
-	}	
+	}
 	$callback->( { items => $menu } );
 	main::DEBUGLOG && $log->is_debug && $log->debug("--_parsePodcastSearchResults");
 	return;
 }
-
 
 
 sub _parsePodcastDetails {
@@ -317,7 +320,7 @@ sub _parsePodcastDetails {
 
 	$loop->([$JSON->{heroBlock}]);
 	$loop->($JSON->{blocks});
-	
+
 	_cacheMenu($cacheIndex, $menu, 600);
 	_renderMenuCodeRefs($menu);
 	$callback->( { items => $menu } );
@@ -343,7 +346,7 @@ sub _parsePlaylistItems {
 			on_select   => 'play'
 		  };
 	}
-    main::DEBUGLOG && $log->is_debug && $log->debug("--_parsePlaylistItems");
+	main::DEBUGLOG && $log->is_debug && $log->debug("--_parsePlaylistItems");
 	return $menu;
 }
 
@@ -382,8 +385,47 @@ sub _parseStationList {
 	my $menu = [];
 
 	for my $item (@$JSON) {
-		my $tagline = '';		
-		if (length $item->{tagline}) {			
+		my $tagline = '';
+		if (length $item->{tagline}) {
+			$tagline = ' - ' . $item->{tagline};
+		}
+		my $title = $item->{name} . $tagline;
+		push  @$menu,
+		  {
+			name => $title,
+			type => 'audio',			
+			url    =>  'globalplayer://_live_' . $item->{heraldId},
+			image => $item->{brandLogo},
+			on_select   => 'play'
+		  };
+	}
+	push  @$menu,
+	  {
+		name => 'Full Regional Radio',
+		type => 'link',
+		url => '',
+		image => Plugins::GlobalPlayerUK::Utilities::IMG_RADIO,
+		passthrough =>[ { call => 'RegionalLiveMenu', codeRef => 'callAPI'} ]
+	  };
+	_cacheMenu($cacheIndex, $menu, 600);
+	_renderMenuCodeRefs($menu);
+	$callback->( { items => $menu } );
+	main::DEBUGLOG && $log->is_debug && $log->debug("--_parseStationList");
+	return;
+}
+
+
+sub _parseFullStationList {
+	my ( $http, $callback, $cacheIndex ) = @_;
+	main::DEBUGLOG && $log->is_debug && $log->debug("++_parseFullStationList");
+	
+	my $JSON = decode_json ${ $http->contentRef };
+
+	my $menu = [];
+
+	for my $item (@$JSON) {
+		my $tagline = '';
+		if (length $item->{tagline}) {
 			$tagline = ' - ' . $item->{tagline};
 		}
 		my $title = $item->{name} . $tagline;
@@ -391,14 +433,14 @@ sub _parseStationList {
 		  {
 			name => $title,
 			type => 'audio',
-			url         => $item->{streamUrl},
-			image => $item->{brandLogo},
+			url    =>  'globalplayer://_live_' . $item->{heraldId},		
 			on_select   => 'play'
 		  };
 	}
+
 	_cacheMenu($cacheIndex, $menu, 600);
 	$callback->( { items => $menu } );
-	main::DEBUGLOG && $log->is_debug && $log->debug("--_parseStationList");
+	main::DEBUGLOG && $log->is_debug && $log->debug("--_parseFullStationList");
 	return;
 }
 
