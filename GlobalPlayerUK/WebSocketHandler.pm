@@ -164,7 +164,7 @@ sub wssend {
 
 
 sub wsreceive {
-	my ($self, $timeout, $cbY, $cbN ) = @_;
+	my ($self, $timeout, $cbY, $cbN, $cbNoData ) = @_;
 	main::DEBUGLOG && $log->is_debug && $log->debug("++wsreceive");
 
 	my $s = IO::Select->new();
@@ -190,6 +190,12 @@ sub wsreceive {
 
 		}
 
+	} else {
+		if ($cbNoData && $! == 0 ) {
+			main::DEBUGLOG && $log->is_debug && $log->debug("No Data Present");
+			$cbNoData->();		
+
+		}
 	}
 
 }
