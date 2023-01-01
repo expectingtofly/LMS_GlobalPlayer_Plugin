@@ -80,28 +80,11 @@ sub canDoAction {
 	main::INFOLOG && $log->is_info && $log->info("action=$action url=$url");
 
 	if ($action eq 'stop') { #skip to next track
-		 #only allow skiping if we have an end number and it is in the past
-		my $song = $client->playingSong();
-		my $props = $song->pluginData('props');
+	
+		main::INFOLOG && $log->is_info && $log->info('No Skip forward - TBD');	
 
-		main::INFOLOG && $log->is_info && $log->info('Skipping forward when the finish is ' . $props->{finish});
-		$song->pluginData( props   => 0 );
-
-		return 1;
-	}
-	if ($action eq 'rew') { #skip back to start of track
-		 # make sure start number is correct for the programme (if we have it)
-		my $songTime = Slim::Player::Source::songTime($client);
-
-		my $song = $client->playingSong();
-		my $props = $song->pluginData('props');
-		$props->{restart} = 1;
-
-		$song->pluginData( props   => $props );
-
-
-		return 1;
-	}
+		return 0;
+	}	
 
 
 	return 1;
@@ -211,10 +194,11 @@ sub close {
 
 	$v->{'session'}->disconnect;
 
-	main::INFOLOG && $log->is_info && $log->info('close called');
-
-	$v->{'trackWS'}->wssend('{"actions":[{"type":"unsubscribe","stream_id":"' . $v->{'stationId'} . '"}]}');
-	$v->{'trackWS'}->wsclose();
+	main::DEBUGLOG && $log->is_debug && $log->debug('close called');
+	if ($v->{'trackWS'}) {
+		$v->{'trackWS'}->wssend('{"actions":[{"type":"unsubscribe","stream_id":"' . $v->{'stationId'} . '"}]}');
+		$v->{'trackWS'}->wsclose();
+	}
 
 	Slim::Utils::Timers::killTimers($self, \&readWS);
 	Slim::Utils::Timers::killTimers($self, \&sendHeartBeat);
@@ -238,17 +222,17 @@ sub setM3U8Array {
 	main::INFOLOG && $log->is_info && $log->info('finding place in array for ' . $fulltime);
 	my @arr = @{$v->{'m3u8Arr'} };
 
-	main::INFOLOG && $log->is_info && $log->info('starting ' . ((scalar @arr) - 1));
+	main::DEBUGLOG && $log->is_debug && $log->debug('starting ' . ((scalar @arr) - 1));
 	for ( my $i = ((scalar @arr) - 1) ; $i >= 7 ; $i -= 2 ) {
-		main::INFOLOG && $log->is_info && $log->info('comparing ' . substr($arr[$i],-19) . ' and ' . $fulltime);
+		main::DEBUGLOG && $log->is_debug && $log->debug('comparing ' . substr($arr[$i],-19) . ' and ' . $fulltime);
 		if (substr($arr[$i],-19) lt $fulltime) {
-			main::INFOLOG && $log->is_info && $log->info('Found it ' . $i . ' had ' . $arr[$i] . ' and ' . $fulltime);
+			main::DEBUGLOG && $log->is_debug && $log->debug('Found it ' . $i . ' had ' . $arr[$i] . ' and ' . $fulltime);
 			$v->{'arrayPlace'} = $i;
 			return;
 		}
 		main::INFOLOG && $log->is_info && $log->info('Not Found it ' . $i);
 	}
-	main::INFOLOG && $log->is_info && $log->info('Never Found it ');
+	
 	return;
 }
 
@@ -269,7 +253,7 @@ sub setTimings {
 	my $client = ${*$self}{'client'};
 	my $song     = ${*$self}{'song'};
 
-	main::INFOLOG && $log->is_info && $log->info("Setting to $secondsIn ");
+	main::DEBUGLOG && $log->is_debug && $log->debug("Setting to $secondsIn ");
 
 
 	#fix progress bar
@@ -307,11 +291,22 @@ sub new {
 
 	main::INFOLOG && $log->is_info && $log->info('set up vars ...');
 
+	my $isSeeking = 0;
+	my $seekdata =$song->can('seekdata') ? $song->seekdata : $song->{'seekdata'};
+	my $startTime = $seekdata->{'timeOffset'};
+
+	main::DEBUGLOG && $log->is_debug && $log->debug"Proposed Seek $startTime  -  offset $seekdata->{'timeOffset'}");	
+
+	if ($startTime) {
+		$isSeeking = 1;		
+	}
+
+
 	my $ws = Plugins::GlobalPlayerUK::WebSocketHandler->new();
 	my $heraldid = _getItemId($masterUrl);
 
 	if ($props->{isContinue} && (str2time($props->{'oldFinishTime'}) > time() ) ) {
-		main::DEBUGLOG && $log->is_debug && $log->debug("The last track didnt complete properly for some reason");
+		main::DEBUGLOG && $log->is_debug && $log->debug("The last track didn't complete properly for some reason");
 		$props->{isContinue} = 0;
 		$props->{oldFinishTime} = '';
 		$song->pluginData( props   => $props );
@@ -344,6 +339,8 @@ sub new {
 		'trackWS' => 0,
 		'trackData' => '',
 		'lastTrackData' => time(),
+		'isSeeking' => $isSeeking,
+		'seekOffset'=> $startTime,
 	};
 
 	#Kick off looking for m3u8
@@ -477,14 +474,14 @@ sub inboundMetaData {
 
 			$v->{'lastArr'} = $lastArray;
 			$v->{'duration'} = $seconds;
-			main::DEBUGLOG && $log->is_debug && $log->debug("last array : $lastArray duration $seconds");
+			main::DEBUGLOG && $log->is_debug && $log->debug("Last array : $lastArray duration $seconds");
 
 			$v->{'ws'}->wssend('{"actions":[{"type":"unsubscribe","stream_id":"' . $v->{'stationId'} . '"}]}');
 			$v->{'ws'}->wsclose();
 			$v->{'m3u8'} = $props->{m3u8};
 			$v->{'havem3u8'} = 1;
 			$song->pluginData( props   => $props );
-			main::DEBUGLOG && $log->is_debug && $log->debug("We have closed");
+			main::DEBUGLOG && $log->is_debug && $log->debug("Closed Initial Web Socket");
 			return;
 		}
 
@@ -493,7 +490,7 @@ sub inboundMetaData {
 		$log->warn("Could not decode JSON");
 	}
 
-	main::DEBUGLOG && $log->is_debug && $log->debug("Kick off m3u8 timer");
+	main::DEBUGLOG && $log->is_debug && $log->debug("Initiate original meta timer");
 	Slim::Utils::Timers::setTimer($self, time() + 1, \&readWS);
 
 
@@ -510,7 +507,7 @@ sub readWS {
 	$v->{'ws'}->wsreceive(
 		0.1,
 		sub {
-			main::DEBUGLOG && $log->is_debug && $log->debug("recursive read succeeded");
+			main::DEBUGLOG && $log->is_debug && $log->debug("Read succeeded on initial WS");
 		},
 		sub {
 			$log->warn("Failed to read recursive WebSocket");
@@ -536,7 +533,7 @@ sub readTrackWS {
 			Slim::Utils::Timers::setTimer($self, time() + 5, \&readTrackWS);
 		},
 		sub {
-			$log->warn("Failed to read recursive WebSocket");
+			$log->warn("Failed to read track WebSocket");
 		},
 		sub {
 			Slim::Utils::Timers::setTimer($self, time() + 5, \&readTrackWS);
@@ -567,8 +564,7 @@ sub sysread {
 
 	# return in $_[1]
 	my $maxBytes = $_[2];
-	my $v        = $self->vars;
-	my $props    = ${*$self}{'props'};
+	my $v        = $self->vars;	
 	my $song      = ${*$self}{'song'};
 	my $masterUrl = $song->track()->url;
 
@@ -590,12 +586,27 @@ sub sysread {
 				if ( $v->{'firstIn'} ) {
 
 					#Find starting point, always start from live, as we can't continue even if we have paused/rewound
-					my $liveTime = strftime( '%Y%m%d_%H%M%S', localtime(time() - 50) );
-					main::DEBUGLOG && $log->is_debug && $log->debug("Current Live Time : $liveTime ");
+					my $epoch = time() - 50;									
+					main::DEBUGLOG && $log->is_debug && $log->debug("Initial live time : $epoch ");
+
+					if ($v->{'isSeeking'}) {
+						my $props = $song->pluginData('props');
+						my $seekepoch = str2time($props->{'start'}) + $v->{'seekOffset'};						
+
+						if ($seekepoch < $epoch) {
+							$epoch = $seekepoch;
+						} else {
+							$v->{'isSeeking'} = 0;
+						}
+
+						main::DEBUGLOG && $log->is_debug && $log->debug("Seeking and using the time : $epoch ");
+					}
+					my $liveTime = strftime( '%Y%m%d_%H%M%S', localtime($epoch) );
+
 					$self->setM3U8Array($liveTime);
 					$self->setTimings((($v->{'arrayPlace'} - 7) / 2) * 10 );
 					$v->{'setTimings'} = 1;
-					$self->trackMetaData();
+					if (! $v->{'isSeeking'} ) { $self->trackMetaData(); }
 					$v->{'firstIn'} = 0;
 				}
 
@@ -625,9 +636,7 @@ sub sysread {
 							my $response = shift->response;
 
 							main::DEBUGLOG && $log->is_debug && $log->debug("got chunk length: " . length $response->content . " for $url");
-							$v->{'inBuf'} .= $response->content;
-
-							main::DEBUGLOG && $log->is_debug && $log->debug("have dechunked");
+							$v->{'inBuf'} .= $response->content;							
 							$v->{'fetching'} = 0;
 						},
 						onError => sub {
@@ -645,7 +654,7 @@ sub sysread {
 
 	# process all available data
 	if ( length $v->{'inBuf'} ) {
-		main::DEBUGLOG && $log->is_debug && $log->debug('Procesing In Buf');
+		main::DEBUGLOG && $log->is_debug && $log->debug('Procesing In Buffer');
 		$v->{'outBuf'} .=   $v->{'inBuf'};
 		$v->{'inBuf'} = '';
 	}
@@ -698,7 +707,7 @@ sub sysread {
 
 	# end of streaming and make sure timer is not running
 	main::INFOLOG && $log->is_info && $log->info("end streaming");
-	$props->{'updatePeriod'} = 0;
+	
 
 	return 0;
 }
@@ -779,9 +788,7 @@ sub getMetadataFor {
 	my ( $class, $client, $full_url ) = @_;
 
 	my ($url) = $full_url =~ /([^&]*)/;
-	my $song = $client->playingSong();
-
-	main::DEBUGLOG && $log->is_debug && $log->debug("getmetadata: $url");
+	my $song = $client->playingSong();	
 
 	my $meta = {title => $url};
 	if ( $song && $song->currentTrack()->url eq $full_url ) {
@@ -789,7 +796,8 @@ sub getMetadataFor {
 			$meta = {
 				title => $props->{'title'},
 				cover => $props->{'artwork'},
-				artist => $props->{'schedule'},
+				artist => $props->{'realTitle'} . ' ' . $props->{'schedule'},
+				type => 'aac',
 			};
 
 		}
@@ -818,42 +826,6 @@ sub explodePlaylist {
 					$cb->([$uri]);
 				}
 			);
-		} elsif ( $uri =~ /_liv_/ ) {
-
-			$log->debug("Doing Live");
-			my $heraldid = _getItemId($uri);
-			$log->debug("herald id $heraldid");
-
-			my $ws = Plugins::GlobalPlayerUK::WebSocketHandler->new();
-			$log->debug("have object");
-
-			$ws->wsconnect(
-				'wss://metadata.musicradio.com/v2/now-playing',
-				sub {#success
-					$log->error("Connected");
-					$ws->wssend('{"actions":[{"type":"subscribe","service":"' . $heraldid . '"}]}');
-					$log->error("Initiate read");
-					$ws->wsreceive(
-						0.2,
-						sub {
-							$log->error("Read succeeded");
-						},
-						sub {
-							$log->error("Read failed");
-						}
-					);
-				},
-				sub {#fail
-					$log->error("Failed to connect to web socket");
-				},
-				sub {#Read
-					my $readin = shift;
-					$log->error("We have read ". $readin);
-					$ws->wssend('{"actions":[{"type":"unsubscribe","stream_id":"' . $heraldid . '"}]}');
-					$ws->wsclose();
-				}
-			);
-
 		} elsif ( $uri =~ /_catchup_|_podcast_/) {
 			if ($main::VERSION lt '8.2.0') {
 				$log->warn("Global Player Favourites only supported in LMS 8.2.0 and greater");
