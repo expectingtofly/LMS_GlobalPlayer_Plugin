@@ -295,7 +295,7 @@ sub new {
 	my $seekdata =$song->can('seekdata') ? $song->seekdata : $song->{'seekdata'};
 	my $startTime = $seekdata->{'timeOffset'};
 
-	main::DEBUGLOG && $log->is_debug && $log->debug"Proposed Seek $startTime  -  offset $seekdata->{'timeOffset'}");	
+	main::DEBUGLOG && $log->is_debug && $log->debug("Proposed Seek $startTime  -  offset $seekdata->{'timeOffset'}");	
 
 	if ($startTime) {
 		$isSeeking = 1;		
@@ -797,7 +797,8 @@ sub getMetadataFor {
 				title => $props->{'title'},
 				cover => $props->{'artwork'},
 				artist => $props->{'realTitle'} . ' ' . $props->{'schedule'},
-				type => 'aac',
+				type => 'AAC',
+				bitrate => 'VBR',
 			};
 
 		}
