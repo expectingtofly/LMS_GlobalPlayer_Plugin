@@ -430,8 +430,14 @@ sub inboundTrackMetaData {
 				$props->{title} = $track;
 				$props->{artwork} =  $json->{'now_playing'}->{'artwork'};
 
-				$song->pluginData( props   => $props );
-				Slim::Music::Info::setDelayedCallback( $client, sub { Slim::Control::Request::notifyFromArray( $client, ['newmetadata'] ); }, 'output-only' );
+				Slim::Music::Info::setDelayedCallback(
+					$client,
+					sub {
+						$song->pluginData( props   => $props );
+						Slim::Control::Request::notifyFromArray( $client, ['newmetadata'] );
+					},
+					'output-only'
+				);
 				$v->{'lastTrackData'} = time();
 
 
@@ -553,8 +559,14 @@ sub readTrackWS {
 		$props->{title} = $props->{realTitle};
 		$props->{artwork} =  $props->{realArtwork};
 
-		$song->pluginData( props   => $props );
-		Slim::Music::Info::setDelayedCallback( $client, sub { Slim::Control::Request::notifyFromArray( $client, ['newmetadata'] ); }, 'output-only' );
+		Slim::Music::Info::setDelayedCallback(
+			$client,
+			sub {
+				$song->pluginData( props   => $props );
+				Slim::Control::Request::notifyFromArray( $client, ['newmetadata'] );
+			},
+			'output-only'
+		);
 		$v->{'lastTrackData'} = time();
 	}
 
@@ -612,6 +624,7 @@ sub sysread {
 					$self->setTimings((($v->{'arrayPlace'} - 7) / 2) * 10 );
 					$v->{'setTimings'} = 1;
 					if (!$v->{'isSeeking'} ) {
+
 						# start listening to track meta data in 20 seconds to give time to see programme
 						Slim::Utils::Timers::setTimer($self, time() + 20, \&trackMetaData);
 					}
