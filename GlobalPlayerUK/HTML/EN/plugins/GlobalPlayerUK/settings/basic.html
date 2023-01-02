@@ -1,11 +1,17 @@
 [% PROCESS settings/header.html %]
 
-[% WRAPPER setting title="Show in 'Radio' Menu" desc="Select this if you would rather Global Player is located within the 'Radio' menu rather than the 'My Apps' menu.  Requires LMS restart." %]
+[% WRAPPER setting title="Menu Location" desc="" %]	
+<input name="pref_is_radio" type="checkbox" [% IF prefs.pref_is_radio %] checked [% END %]>
+<label for="pref_is_radio">Place in the "Radio" menu instead of the default "My Apps" menu.  Requires a restart of LMS.</label>	
+[% END %]	
 
-<div class="prefDesc">[% "ENABLE" | string %]
-    <input name="pref_is_radio" type="checkbox" [% IF prefs.pref_is_radio %] checked [% END %]>
-</div>
-
+[% WRAPPER setting title="Live Radio" desc="" %]	
+<label for="pref_buffer" > Buffer length: </label>
+	<select class="stdedit" name="pref_buffer" id=pref_buffer">			
+		<option [% IF prefs.pref_buffer == 0 %]selected [% END %]value="0">Short</option>
+		<option [% IF prefs.pref_buffer == 1 %]selected [% END %]value="1">Standard</option>
+		<option [% IF prefs.pref_buffer == 2 %]selected [% END %]value="2">Long</option>		
+	</select>	
+    
 [% END %]
-
 [% PROCESS settings/footer.html %]

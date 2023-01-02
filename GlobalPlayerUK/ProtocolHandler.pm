@@ -34,6 +34,7 @@ use POSIX qw(strftime);
 use Slim::Utils::Log;
 use Slim::Utils::Errno;
 use Slim::Networking::Async::HTTP;
+use Slim::Utils::Prefs;
 
 
 use Plugins::GlobalPlayerUK::GlobalPlayerFeeder;
@@ -48,6 +49,7 @@ use constant END_OF_M3U8 => '#EXT-X-ENDLIST';
 Slim::Player::ProtocolHandlers->registerHandler('globalplayer', __PACKAGE__);
 
 my $log = logger('plugin.globalplayeruk');
+my $prefs = preferences('plugin.globalplayeruk');
 
 sub isAudio { 1 }
 
@@ -80,18 +82,17 @@ sub canDoAction {
 	main::INFOLOG && $log->is_info && $log->info("action=$action url=$url");
 
 	if ($action eq 'stop') { #skip to next track
-	
-		main::INFOLOG && $log->is_info && $log->info('No Skip forward - TBD');	
+
+		main::INFOLOG && $log->is_info && $log->info('No Skip forward - TBD');
 
 		return 0;
-	}	
+	}
 
 
 	return 1;
 }
 
 
-# fetch the Sounds player url and extract a playable stream
 sub getNextTrack {
 	my ( $class, $song, $successCb, $errorCb ) = @_;
 	main::DEBUGLOG && $log->is_debug && $log->debug("getNextTrack++");
@@ -203,6 +204,8 @@ sub close {
 	Slim::Utils::Timers::killTimers($self, \&readWS);
 	Slim::Utils::Timers::killTimers($self, \&sendHeartBeat);
 	Slim::Utils::Timers::killTimers($self, \&readTrackWS);
+	Slim::Utils::Timers::killTimers($self, \&trackMetaData);
+
 
 	$self->SUPER::close(@_);
 }
@@ -232,7 +235,7 @@ sub setM3U8Array {
 		}
 		main::INFOLOG && $log->is_info && $log->info('Not Found it ' . $i);
 	}
-	
+
 	return;
 }
 
@@ -295,15 +298,16 @@ sub new {
 	my $seekdata =$song->can('seekdata') ? $song->seekdata : $song->{'seekdata'};
 	my $startTime = $seekdata->{'timeOffset'};
 
-	main::DEBUGLOG && $log->is_debug && $log->debug("Proposed Seek $startTime  -  offset $seekdata->{'timeOffset'}");	
+	main::DEBUGLOG && $log->is_debug && $log->debug("Proposed Seek $startTime  -  offset $seekdata->{'timeOffset'}");
 
 	if ($startTime) {
-		$isSeeking = 1;		
+		$isSeeking = 1;
 	}
 
 
 	my $ws = Plugins::GlobalPlayerUK::WebSocketHandler->new();
 	my $heraldid = _getItemId($masterUrl);
+	my $bufferLength = getBufferLength();
 
 	if ($props->{isContinue} && (str2time($props->{'oldFinishTime'}) > time() ) ) {
 		main::DEBUGLOG && $log->is_debug && $log->debug("The last track didn't complete properly for some reason");
@@ -341,6 +345,7 @@ sub new {
 		'lastTrackData' => time(),
 		'isSeeking' => $isSeeking,
 		'seekOffset'=> $startTime,
+		'bufferLength' => $bufferLength,
 	};
 
 	#Kick off looking for m3u8
@@ -564,7 +569,7 @@ sub sysread {
 
 	# return in $_[1]
 	my $maxBytes = $_[2];
-	my $v        = $self->vars;	
+	my $v        = $self->vars;
 	my $song      = ${*$self}{'song'};
 	my $masterUrl = $song->track()->url;
 
@@ -586,12 +591,12 @@ sub sysread {
 				if ( $v->{'firstIn'} ) {
 
 					#Find starting point, always start from live, as we can't continue even if we have paused/rewound
-					my $epoch = time() - 50;									
+					my $epoch = time() - $v->{'bufferLength'};
 					main::DEBUGLOG && $log->is_debug && $log->debug("Initial live time : $epoch ");
 
 					if ($v->{'isSeeking'}) {
 						my $props = $song->pluginData('props');
-						my $seekepoch = str2time($props->{'start'}) + $v->{'seekOffset'};						
+						my $seekepoch = str2time($props->{'start'}) + $v->{'seekOffset'};
 
 						if ($seekepoch < $epoch) {
 							$epoch = $seekepoch;
@@ -606,7 +611,10 @@ sub sysread {
 					$self->setM3U8Array($liveTime);
 					$self->setTimings((($v->{'arrayPlace'} - 7) / 2) * 10 );
 					$v->{'setTimings'} = 1;
-					if (! $v->{'isSeeking'} ) { $self->trackMetaData(); }
+					if (!$v->{'isSeeking'} ) {
+						# start listening to track meta data in 20 seconds to give time to see programme
+						Slim::Utils::Timers::setTimer($self, time() + 20, \&trackMetaData);
+					}
 					$v->{'firstIn'} = 0;
 				}
 
@@ -636,7 +644,7 @@ sub sysread {
 							my $response = shift->response;
 
 							main::DEBUGLOG && $log->is_debug && $log->debug("got chunk length: " . length $response->content . " for $url");
-							$v->{'inBuf'} .= $response->content;							
+							$v->{'inBuf'} .= $response->content;
 							$v->{'fetching'} = 0;
 						},
 						onError => sub {
@@ -707,9 +715,24 @@ sub sysread {
 
 	# end of streaming and make sure timer is not running
 	main::INFOLOG && $log->is_info && $log->info("end streaming");
-	
+
 
 	return 0;
+}
+
+
+sub getBufferLength {
+	my $bufferPrefs = $prefs->get('buffer');
+
+	my $buffer = 50;
+
+	if ( $bufferPrefs == 0 ) { #short
+		$buffer = 40;
+	} elsif ( $bufferPrefs == 2 ) {#long
+		$buffer = 60;
+	}
+	main::INFOLOG && $log->is_info && $log->info("Buffer set to $buffer");
+	return $buffer;
 }
 
 
@@ -788,7 +811,7 @@ sub getMetadataFor {
 	my ( $class, $client, $full_url ) = @_;
 
 	my ($url) = $full_url =~ /([^&]*)/;
-	my $song = $client->playingSong();	
+	my $song = $client->playingSong();
 
 	my $meta = {title => $url};
 	if ( $song && $song->currentTrack()->url eq $full_url ) {
