@@ -16,7 +16,7 @@ sub page {
 }
 
 sub prefs {  
-    return ( $prefs, qw(is_radio) );
+    return ( $prefs, qw(is_radio buffer) );
 }
 
 1;

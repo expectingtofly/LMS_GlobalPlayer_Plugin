@@ -38,13 +38,13 @@ my $log = Slim::Utils::Log->addLogCategory(
 	}
 );
 
-
 my $prefs = preferences('plugin.globalplayeruk');
+
 
 sub initPlugin {
 	my $class = shift;
 
-	$prefs->init({ is_radio => 0 });
+	$prefs->init({ is_radio => 0, buffer => 1 });
 
 	$class->SUPER::initPlugin(
 		feed   => \&Plugins::GlobalPlayerUK::GlobalPlayerFeeder::toplevel,
