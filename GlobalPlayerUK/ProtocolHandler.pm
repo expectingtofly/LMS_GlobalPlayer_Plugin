@@ -113,6 +113,7 @@ sub getNextTrack {
 			isContinue => 1,
 			havem3u8 => 0,
 			oldFinishTime => $oldFinish,
+			schedule  => '',
 		};
 		$song->pluginData( props   => $props );
 	} else {
@@ -123,6 +124,7 @@ sub getNextTrack {
 			isContinue => 0,
 			havem3u8 => 0,
 			oldFinishTime => 0,
+			schedule  => '',
 		};
 		$song->pluginData( props   => $newprops );
 	}
@@ -299,9 +301,8 @@ sub new {
 	my $seekdata =$song->can('seekdata') ? $song->seekdata : $song->{'seekdata'};
 	my $startTime = $seekdata->{'timeOffset'};
 
-	main::DEBUGLOG && $log->is_debug && $log->debug("Proposed Seek $startTime  -  offset $seekdata->{'timeOffset'}");
-
 	if ($startTime) {
+		main::DEBUGLOG && $log->is_debug && $log->debug("Proposed Seek $startTime  -  offset $seekdata->{'timeOffset'}");
 		$isSeeking = 1;
 	}
 
@@ -483,7 +484,7 @@ sub inboundMetaData {
 			Slim::Utils::Timers::killTimers($self, \&readWS);
 
 			my $seconds = str2time($props->{'finish'}) - str2time($props->{'start'});
-			my $lastArray = ((int($seconds/CHUNK_SECONDS) * 2 ) - 4) + 7;
+			my $lastArray = ((int($seconds/CHUNK_SECONDS) * 2 ) ) + 7; #Probably 2 too many, but we want overhang.
 
 			$v->{'lastArr'} = $lastArray;
 			$v->{'duration'} = $seconds;
@@ -640,11 +641,7 @@ sub sysread {
 
 				my $url = $m3u8arr[$v->{'arrayPlace'}];
 				main::DEBUGLOG && $log->is_debug && $log->debug("Now at  $v->{'arrayPlace'} ending at $v->{'lastArr'} ");
-				if ($v->{'arrayPlace'} == $v->{'lastArr'}) {
-					main::DEBUGLOG && $log->is_debug && $log->debug("Last item end streaming $v->{'lastArr'} ");
-					$v->{'streaming'} = 0;
 
-				}
 				$v->{'arrayPlace'} += 2;
 
 				my $headers = [ 'Connection', 'keep-alive' ];
@@ -657,9 +654,12 @@ sub sysread {
 						request => $request,
 						onBody => sub {
 							my $response = shift->response;
-
 							main::DEBUGLOG && $log->is_debug && $log->debug("got chunk length: " . length $response->content . " for $url");
 							$v->{'inBuf'} .= $response->content;
+							if ($v->{'arrayPlace'} > $v->{'lastArr'}) {
+								main::DEBUGLOG && $log->is_debug && $log->debug("Last item end streaming $v->{'lastArr'} ");
+								$v->{'streaming'} = 0;
+							}
 							$v->{'fetching'} = 0;
 						},
 						onError => sub {
