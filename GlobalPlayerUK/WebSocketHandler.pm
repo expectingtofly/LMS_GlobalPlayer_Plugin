@@ -38,7 +38,8 @@ sub new {
 	my $class = shift;	
 	my $self = {
 		client     => 0,         
-		tcp_socket   => 0,       
+		tcp_socket   => 0,    
+		socket_open  => 0,   
 	};
 	
 	bless $self, $class;
@@ -86,6 +87,7 @@ sub wsconnect {
 
 	main::INFOLOG && $log->is_info && $log->info("Trying to create Protocol::WebSocket::Client handler for $url...");
 	$self->{client} = Protocol::WebSocket::Client->new(url => $url);
+	$self->{socket_open} = 1;
 
 	# Set up the various methods for the WS Protocol handler
 	#  On Write: take the buffer (WebSocket packet) and send it on the socket.
@@ -96,7 +98,7 @@ sub wsconnect {
 
 			main::INFOLOG && $log->is_info && $log->info("Sending $buf ...");
 
-			syswrite $self->{tcp_socket}, $buf;
+			syswrite $self->{tcp_socket}, $buf if $self->{socket_open};
 		}
 	);
 
@@ -202,10 +204,11 @@ sub wsreceive {
 
 sub wsclose {
 	my ($self) = @_;
-	main::DEBUGLOG && $log->is_debug && $log->debug("++wsclose");
+	main::DEBUGLOG && $log->is_debug && $log->debug("++wsclose Connected" . $self->{tcp_socket}->connected() );
 	
 	$self->{client}->disconnect;
-    $self->{tcp_socket}->close;
+    $self->{tcp_socket}->close if $self->{socket_open};
+	$self->{socket_open} =0;
 	
 	main::DEBUGLOG && $log->is_debug && $log->debug("--wsclose");	
 	return;
