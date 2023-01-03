@@ -346,6 +346,7 @@ sub new {
 		'isSeeking' => $isSeeking,
 		'seekOffset'=> $startTime,
 		'bufferLength' => $bufferLength,
+		'm3u8Delay'	=> 8,
 	};
 
 	#Kick off looking for m3u8
@@ -686,7 +687,7 @@ sub sysread {
 		return $bytes;
 	} elsif ( $v->{'streaming'} ) {
 		if ($v->{'havem3u8'}) {
-			if ( !$v->{'m3u8Arr'} || (($v->{'arrayPlace'} > scalar @m3u8arr) && (!$v->{'fetching'}) && ( $v->{'lastm3u8'} + 8 < time() ) ))  {
+			if ( !$v->{'m3u8Arr'} || (($v->{'arrayPlace'} > scalar @m3u8arr) && (!$v->{'fetching'}) && ( ($v->{'lastm3u8'} + $v->{'m3u8Delay'}) < time() ) ))  {
 				main::DEBUGLOG && $log->is_debug && $log->debug('Getting Fresh M3u8 ' . Time::HiRes::time());
 				$v->{'fetching'} = 1;
 				readM3u8(
@@ -708,13 +709,19 @@ sub sysread {
 							main::DEBUGLOG && $log->is_debug && $log->debug('setting last array to ' . $v->{'lastArr'});
 
 						}
-
+						$v->{'m3u8Delay'} = 8;
 						$v->{'fetching'} = 0;
 
 					},
 					sub {
+						my $connected = shift;
 						main::DEBUGLOG && $log->is_debug && $log->debug('No new M3u8 available');
 						$v->{'lastm3u8'} = time();
+						if ($connected) {
+							$v->{'m3u8Delay'} = 1;
+						} else {
+							$v->{'m3u8Delay'} = 8;
+						}
 						$v->{'fetching'} = 0;
 					},
 					$v->{'headers'},
@@ -795,7 +802,7 @@ sub readM3u8 {
 
 				if ($response->code == 304) {
 					main::DEBUGLOG && $log->is_debug && $log->debug('Nothing New ');
-					$cbN->();
+					$cbN->(1);
 				} else {
 
 					my $res = $response->content;
@@ -810,7 +817,7 @@ sub readM3u8 {
 				my ( $http, $error ) = @_;
 
 				$log->warn('Failed to get M3u8 with error : ' . $error);
-				$cbN->();
+				$cbN->(0);
 
 			}
 		}
