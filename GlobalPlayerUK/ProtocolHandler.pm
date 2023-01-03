@@ -235,6 +235,7 @@ sub setM3U8Array {
 		}
 		main::INFOLOG && $log->is_info && $log->info('Not Found it ' . $i);
 	}
+	$v->{'arrayPlace'} = 7; #set it to start
 
 	return;
 }
