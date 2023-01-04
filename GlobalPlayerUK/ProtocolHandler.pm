@@ -114,6 +114,9 @@ sub getNextTrack {
 			havem3u8 => 0,
 			oldFinishTime => $oldFinish,
 			schedule  => '',
+			title => '',
+			artwork => '',
+			reaTitle => '',
 		};
 		$song->pluginData( props   => $props );
 	} else {
@@ -125,6 +128,9 @@ sub getNextTrack {
 			havem3u8 => 0,
 			oldFinishTime => 0,
 			schedule  => '',
+			title => '',
+			artwork => '',
+			reaTitle => '',
 		};
 		$song->pluginData( props   => $newprops );
 	}
@@ -156,7 +162,7 @@ sub getm3u8Arr {
 				sub {
 					main::DEBUGLOG && $log->is_debug && $log->debug("Read succeeded");
 				},
-				sub {					
+				sub {
 					$log->warn("Failed to read WebSocket");
 					$cbN->();
 				}
@@ -363,7 +369,7 @@ sub new {
 				sub {
 					main::DEBUGLOG && $log->is_debug && $log->debug("Read succeeded");
 				},
-				sub {				
+				sub {
 					$log->warn("Failed to read WebSocket");
 				}
 			);
