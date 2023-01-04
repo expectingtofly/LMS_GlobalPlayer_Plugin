@@ -30,6 +30,7 @@ use Protocol::WebSocket::Client;
 use Data::Dumper;
 
 use Slim::Utils::Log;
+use Slim::Utils::Prefs;
 
 my $log = logger('plugin.globalplayeruk');
 
@@ -76,6 +77,9 @@ sub wsconnect {
 	}
 
 	main::INFOLOG && $log->is_info && $log->info("Attempting to open SSL socket to $proto://$host:$port...");
+	IO::Socket::SSL::set_defaults(
+		SSL_verify_mode => Net::SSLeay::VERIFY_NONE() 
+			) if preferences('server')->get('insecureHTTPS');
 
 	$self->{tcp_socket} = IO::Socket::SSL->new(
 		PeerAddr => $host,
@@ -83,7 +87,7 @@ sub wsconnect {
 		Proto => 'tcp',
 		SSL_startHandshake => ($proto eq 'wss' ? 1 : 0),
 		Blocking => 1
-	) or $cbConnectFailed->("Failed to connect to socket: $@");
+	) or $cbConnectFailed->("Failed to connect to socket: $!,$SSL_ERROR");
 
 	main::INFOLOG && $log->is_info && $log->info("Trying to create Protocol::WebSocket::Client handler for $url...");
 	$self->{client} = Protocol::WebSocket::Client->new(url => $url);
