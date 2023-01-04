@@ -156,14 +156,15 @@ sub getm3u8Arr {
 				sub {
 					main::DEBUGLOG && $log->is_debug && $log->debug("Read succeeded");
 				},
-				sub {
+				sub {					
 					$log->warn("Failed to read WebSocket");
 					$cbN->();
 				}
 			);
 		},
 		sub {#fail
-			$log->warn("Failed to connect to WebSocket");
+			my $result = shift;
+			$log->warn("Failed to connect to WebSocket : $result");
 			$cbN->();
 		},
 		sub {#Read
@@ -362,13 +363,14 @@ sub new {
 				sub {
 					main::DEBUGLOG && $log->is_debug && $log->debug("Read succeeded");
 				},
-				sub {
+				sub {				
 					$log->warn("Failed to read WebSocket");
 				}
 			);
 		},
 		sub {#fail
-			$log->warn("Failed to connect to WebSocket");
+			my $result = shift;
+			$log->warn("Failed to connect to WebSocket : $result");
 		},
 		sub {
 			my $readin = shift;
@@ -400,7 +402,8 @@ sub trackMetaData {
 
 			},
 			sub {#fail
-				$log->warn("Failed to connect to WebSocket");
+				my $result = shift;
+				$log->warn("Failed to read WebSocket : $result");
 			},
 			sub {
 				my $readin = shift;
