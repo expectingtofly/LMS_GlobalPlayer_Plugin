@@ -83,11 +83,20 @@ sub canDoAction {
 
 	if ($action eq 'stop') { #skip to next track
 
-		main::INFOLOG && $log->is_info && $log->info('No Skip forward - TBD');
+		my $song = $client->playingSong();
+		my $props = $song->pluginData('props');$props->{returnToLive} = 1;
+		$song->pluginData( props   => $props );
+		main::INFOLOG && $log->is_info && $log->info("Returning to live");
+		return 1;
+	} elsif ($action eq 'rew') { #skip to start of programme
 
-		return 0;
+		my $song = $client->playingSong();
+		my $props = $song->pluginData('props');
+		$props->{restart} = 1;
+		$song->pluginData( props   => $props );
+		main::INFOLOG && $log->is_info && $log->info("Skipping back to start of programme");
+		return 1;
 	}
-
 
 	return 1;
 }
@@ -102,8 +111,8 @@ sub getNextTrack {
 	my $oldm3u8 = '';
 
 	main::INFOLOG && $log->is_info && $log->info("Request for next track " . $masterUrl);
-
-	if (my $props = $song->pluginData('props')) {
+	my $props = $song->pluginData('props');
+	if ($props && !$props->{returnToLive}) {
 		main::INFOLOG && $log->is_info && $log->info("Continue to next programme");
 		my $oldm3u8 = $props->{m3u8};
 		my $oldFinish = $props->{finish};
@@ -253,7 +262,7 @@ sub setM3U8Array {
 sub getSeekData {
 	my ( $class, $client, $song, $newtime ) = @_;
 
-	main::INFOLOG && $log->info( 'Trying to seek ' . $newtime . ' seconds for offset ' . $song->track->audio_offset );
+	main::INFOLOG && $log->info( 'Trying to seek ' . $newtime );
 
 	return { timeOffset => $newtime };
 }
@@ -295,6 +304,8 @@ sub new {
 
 	return undef if !defined $props;
 
+	main::INFOLOG && $log->is_info && $log->info('Props  : ' . Dumper($props));
+
 
 	my $client = $args->{client};
 	my $masterUrl = $song->track()->url;
@@ -307,6 +318,14 @@ sub new {
 	my $isSeeking = 0;
 	my $seekdata =$song->can('seekdata') ? $song->seekdata : $song->{'seekdata'};
 	my $startTime = $seekdata->{'timeOffset'};
+
+	if ($props->{restart}) {
+		$startTime = 0;
+		$isSeeking = 1;
+		$props->{restart} = 0;  #Resetting for in case of next seek.
+		$song->pluginData( props   => $props );
+		main::DEBUGLOG && $log->is_debug && $log->debug("Restarting at beginning of track");
+	}
 
 	if ($startTime) {
 		main::DEBUGLOG && $log->is_debug && $log->debug("Proposed Seek $startTime  -  offset $seekdata->{'timeOffset'}");
@@ -484,8 +503,7 @@ sub inboundMetaData {
 
 
 		my $props = generateProps($json);
-		main::DEBUGLOG && $log->is_debug && $log->debug("we have m3u8 : ". $props->{m3u8});
-		main::DEBUGLOG && $log->is_debug && $log->debug("comparing : ". $props->{'finish'} . " and " . $v->{'oldFinishTime'} );
+		main::DEBUGLOG && $log->is_debug && $log->debug("we have m3u8 : ". $props->{m3u8});		
 
 		if (   (length $props->{m3u8} && !$v->{'isContinue'})
 			|| ($v->{'isContinue'} && length $props->{m3u8} && ( $props->{'finish'} ne $v->{'oldFinishTime'}))) {
