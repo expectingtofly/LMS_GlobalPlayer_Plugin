@@ -652,6 +652,12 @@ sub sysread {
 					my $liveTime = strftime( '%Y%m%d_%H%M%S', localtime($epoch) );
 
 					$self->setM3U8Array($liveTime);
+					#if its the last one in the m3u8 it doesn't give enough time and you get a pause, so adjusting
+					if (!$v->{'isSeeking'} && ( $v->{'arrayPlace'} != 7) && (scalar @m3u8arr == ($v->{'arrayPlace'} + 1))) {
+						$v->{'arrayPlace'} -= 2;
+						main::DEBUGLOG && $log->is_debug && $log->debug("Reducing start point to allow startup");
+					}
+
 					$self->setTimings((($v->{'arrayPlace'} - 7) / 2) * 10 );
 					$v->{'setTimings'} = 1;
 					if (!$v->{'isSeeking'} ) {
