@@ -83,11 +83,21 @@ sub canDoAction {
 
 	if ($action eq 'stop') { #skip to next track
 
-		main::INFOLOG && $log->is_info && $log->info('No Skip forward - TBD');
+		my $song = $client->playingSong();
+		my $props = $song->pluginData('props');
+		$props->{returnToLive} = 1;
+		$song->pluginData( props   => $props );
+		main::INFOLOG && $log->is_info && $log->info("Returning to live");
+		return 1;
+	} elsif ($action eq 'rew') { #skip to start of programme
 
-		return 0;
+		my $song = $client->playingSong();
+		my $props = $song->pluginData('props');
+		$props->{restart} = 1;
+		$song->pluginData( props   => $props );
+		main::INFOLOG && $log->is_info && $log->info("Skipping back to start of programme");
+		return 1;
 	}
-
 
 	return 1;
 }
@@ -102,8 +112,8 @@ sub getNextTrack {
 	my $oldm3u8 = '';
 
 	main::INFOLOG && $log->is_info && $log->info("Request for next track " . $masterUrl);
-
-	if (my $props = $song->pluginData('props')) {
+	my $props = $song->pluginData('props');
+	if ($props && !$props->{returnToLive}) {
 		main::INFOLOG && $log->is_info && $log->info("Continue to next programme");
 		my $oldm3u8 = $props->{m3u8};
 		my $oldFinish = $props->{finish};
@@ -253,7 +263,7 @@ sub setM3U8Array {
 sub getSeekData {
 	my ( $class, $client, $song, $newtime ) = @_;
 
-	main::INFOLOG && $log->info( 'Trying to seek ' . $newtime . ' seconds for offset ' . $song->track->audio_offset );
+	main::INFOLOG && $log->info( 'Trying to seek ' . $newtime );
 
 	return { timeOffset => $newtime };
 }
@@ -295,6 +305,8 @@ sub new {
 
 	return undef if !defined $props;
 
+	main::INFOLOG && $log->is_info && $log->info('Props  : ' . Dumper($props));
+
 
 	my $client = $args->{client};
 	my $masterUrl = $song->track()->url;
@@ -307,6 +319,14 @@ sub new {
 	my $isSeeking = 0;
 	my $seekdata =$song->can('seekdata') ? $song->seekdata : $song->{'seekdata'};
 	my $startTime = $seekdata->{'timeOffset'};
+
+	if ($props->{restart}) {
+		$startTime = 0;
+		$isSeeking = 1;
+		$props->{restart} = 0;  #Resetting for in case of next seek.
+		$song->pluginData( props   => $props );
+		main::DEBUGLOG && $log->is_debug && $log->debug("Restarting at beginning of track");
+	}
 
 	if ($startTime) {
 		main::DEBUGLOG && $log->is_debug && $log->debug("Proposed Seek $startTime  -  offset $seekdata->{'timeOffset'}");
@@ -329,33 +349,33 @@ sub new {
 	${*$self}{'song'}   = $args->{'song'};
 	${*$self}{'client'} = $args->{'client'};
 	${*$self}{'url'}    = $args->{'url'};
-	${*$self}{'vars'} = {    # variables which hold state for this instance:
-		'inBuf'  => '',      # buffer of received data
-		'outBuf' => '',      # buffer of processed audio
-		'streaming' =>1,    # flag for streaming, changes to 0 when all data received
+	${*$self}{'vars'} = {    	# variables which hold state for this instance:
+		'inBuf'  => '',      	# buffer of received data
+		'outBuf' => '',      	# buffer of processed audio
+		'streaming' =>1,    	# flag for streaming, changes to 0 when all data received
 		'fetching' => 0,        # waiting for HTTP data
-		'firstIn' => 1,        # waiting for HTTP data
-		'arrayPlace'   => 0, # where in array to start
-		'm3u8Arr' => 0, #m3u8 array
-		'm3u8' => 0,
-		'stationId' => $heraldid,
-		'duration' => 0,
-		'havem3u8' => 0,
-		'lastm3u8' => 0,
-		'oldFinishTime' => $props->{oldFinishTime},
-		'lastArr' => 0,
+		'firstIn' => 1,        	# Indicator to show this is th first audio chunk
+		'arrayPlace'   => 0, 	# Current position in the m3u8 array
+		'm3u8Arr' => 0, 		# m3u8 array
+		'm3u8' => '',			# URL of the m3u8
+		'stationId' => $heraldid,	# Station ID
+		'duration' => 0,		# Duration of current live programme
+		'havem3u8' => 0,		# Indicator to show that we have the M3U8 URL
+		'lastm3u8' => 0,		# The time we last retrieved the contents of the M3U8
+		'oldFinishTime' => $props->{oldFinishTime},    #The time the last programme finishied
+		'lastArr' => 0,			# The position of the last audio chunk in the current M3U8 array
 		'session' 	  => Slim::Networking::Async::HTTP->new,
-		'isContinue' => $props->{isContinue},
-		'setTimings' => 0,
-		'headers'	=> 0,
-		'ws' => $ws,
-		'trackWS' => 0,
-		'trackData' => '',
-		'lastTrackData' => time(),
-		'isSeeking' => $isSeeking,
-		'seekOffset'=> $startTime,
-		'bufferLength' => $bufferLength,
-		'm3u8Delay'	=> 8,
+		'isContinue' => $props->{isContinue},   #Indicator that we are continueing to the next live programme (track)
+		'setTimings' => 0,		#Indicator that we have set the current programme timings
+		'headers'	=> 0,		#M3U8 headers for http checking
+		'ws' => $ws,			# The web socket where we get the programme information
+		'trackWS' => 0,			# The web socket where we get the track information
+		'trackData' => '',		# Where we hold the track data
+		'lastTrackData' => time(),	# Time we got the last track
+		'isSeeking' => $isSeeking,	# Are we starting as a result of a seek
+		'seekOffset'=> $startTime,	# The seek offset
+		'bufferLength' => $bufferLength,	# The preferences for how much buffer time from live edge we use
+		'm3u8Delay'	=> 8,		# The seconds between checking for new m3u8 content, this reduces if nothing new.
 	};
 
 	#Kick off looking for m3u8
@@ -485,7 +505,6 @@ sub inboundMetaData {
 
 		my $props = generateProps($json);
 		main::DEBUGLOG && $log->is_debug && $log->debug("we have m3u8 : ". $props->{m3u8});
-		main::DEBUGLOG && $log->is_debug && $log->debug("comparing : ". $props->{'finish'} . " and " . $v->{'oldFinishTime'} );
 
 		if (   (length $props->{m3u8} && !$v->{'isContinue'})
 			|| ($v->{'isContinue'} && length $props->{m3u8} && ( $props->{'finish'} ne $v->{'oldFinishTime'}))) {
@@ -637,8 +656,8 @@ sub sysread {
 					$v->{'setTimings'} = 1;
 					if (!$v->{'isSeeking'} ) {
 
-						# start listening to track meta data in 20 seconds to give time to see programme
-						Slim::Utils::Timers::setTimer($self, time() + 20, \&trackMetaData);
+						# start listening to track meta data in 15 seconds to give time to see programme
+						Slim::Utils::Timers::setTimer($self, time() + 15, \&trackMetaData);
 					}
 					$v->{'firstIn'} = 0;
 				}
