@@ -637,8 +637,8 @@ sub sysread {
 					$v->{'setTimings'} = 1;
 					if (!$v->{'isSeeking'} ) {
 
-						# start listening to track meta data in 20 seconds to give time to see programme
-						Slim::Utils::Timers::setTimer($self, time() + 20, \&trackMetaData);
+						# start listening to track meta data in 15 seconds to give time to see programme
+						Slim::Utils::Timers::setTimer($self, time() + 15, \&trackMetaData);
 					}
 					$v->{'firstIn'} = 0;
 				}
