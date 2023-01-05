@@ -454,13 +454,15 @@ sub inboundTrackMetaData {
 
 			my $track = $json->{'now_playing'}->{'title'} . ' by ' . $json->{'now_playing'}->{'artist'};
 
-			if ($track ne $v->{'trackData'}) {
-				main::DEBUGLOG && $log->is_debug && $log->debug("NEW TRACK ...  $track");
-				$v->{'trackData'} = $track;
-				my $props = $song->pluginData('props');
 
-				$props->{title} = $track;
-				$props->{artwork} =  $json->{'now_playing'}->{'artwork'};
+			main::DEBUGLOG && $log->is_debug && $log->debug("NEW TRACK ...  $track");
+			$v->{'trackData'} = $track;
+			my $props = $song->pluginData('props');
+
+			$props->{title} = $track;
+			$props->{artwork} =  $json->{'now_playing'}->{'artwork'};
+
+			if ($track ne $v->{'trackData'}) {
 
 				Slim::Music::Info::setDelayedCallback(
 					$client,
@@ -470,12 +472,12 @@ sub inboundTrackMetaData {
 					},
 					'output-only'
 				);
-				$v->{'lastTrackData'} = time();
-
-
-			} else {
-				main::DEBUGLOG && $log->is_debug && $log->debug("Same Track");
 			}
+			$v->{'lastTrackData'} = time();
+
+		} else {
+			main::DEBUGLOG && $log->is_debug && $log->debug("Returning to normal");
+			$v->{'lastTrackData'} = 0;
 		}
 
 	} else {
@@ -652,6 +654,7 @@ sub sysread {
 					my $liveTime = strftime( '%Y%m%d_%H%M%S', localtime($epoch) );
 
 					$self->setM3U8Array($liveTime);
+
 					#if its the last one in the m3u8 it doesn't give enough time and you get a pause, so adjusting
 					if (!$v->{'isSeeking'} && ( $v->{'arrayPlace'} != 7) && (scalar @m3u8arr == ($v->{'arrayPlace'} + 1))) {
 						$v->{'arrayPlace'} -= 2;
