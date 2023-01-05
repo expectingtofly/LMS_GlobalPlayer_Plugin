@@ -456,13 +456,14 @@ sub inboundTrackMetaData {
 
 
 			main::DEBUGLOG && $log->is_debug && $log->debug("NEW TRACK ...  $track");
-			$v->{'trackData'} = $track;
+			
 			my $props = $song->pluginData('props');
 
 			$props->{title} = $track;
 			$props->{artwork} =  $json->{'now_playing'}->{'artwork'};
 
 			if ($track ne $v->{'trackData'}) {
+				$v->{'trackData'} = $track;
 
 				Slim::Music::Info::setDelayedCallback(
 					$client,
