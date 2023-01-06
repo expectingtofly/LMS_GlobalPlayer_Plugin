@@ -875,10 +875,14 @@ sub getMetadataFor {
 	my $meta = {title => $url};
 	if ( $song && $song->currentTrack()->url eq $full_url ) {
 		if (my $props = $song->pluginData('props') ) {
+			my $artist = $props->{'realTitle'};
+			if ( $props->{'schedule'} )  {
+				$artist .= ' ' . $props->{'schedule'};
+			}
 			$meta = {
 				title => $props->{'title'},
 				cover => $props->{'artwork'},
-				artist => $props->{'realTitle'} . ' ' . $props->{'schedule'},
+				artist => $artist,
 				type => 'AAC',
 				bitrate => 'VBR',
 			};
