@@ -797,6 +797,13 @@ sub getBufferLength {
 
 sub generateProps {
 	my $json = shift;
+	
+	my $artwork = '';
+	if ( $json->{current_show}->{watermarked_artwork} ) {
+		$artwork = $json->{current_show}->{watermarked_artwork};
+	} else {
+		$artwork = $json->{current_show}->{artwork};
+	}
 
 	my $props = {
 		m3u8 => $json->{current_show}->{live_restart_url},
@@ -806,8 +813,8 @@ sub generateProps {
 		realTitle =>  $json->{current_show}->{name},
 		schedule =>  $json->{current_show}->{schedule},
 		programmeId =>  $json->{current_show}->{programme_id},
-		artwork =>  $json->{current_show}->{artwork},
-		realArtwork => $json->{current_show}->{artwork},
+		artwork =>  $artwork,
+		realArtwork => $artwork,
 
 	};
 	main::DEBUGLOG && $log->is_debug && $log->debug('Props : ' . Dumper($props));
