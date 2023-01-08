@@ -927,13 +927,19 @@ sub explodePlaylist {
 				sub {
 					my $stream = shift;
 
-					my $ret ={
-						'type'  => 'opml',
-						'title' => '',
-						'items' => [$stream]
-					};
+					if ($main::VERSION lt '8.2.0') {
+						$cb->([$stream->{url}]);
+					} else {
 
-					$cb->($ret);
+
+						my $ret ={
+							'type'  => 'opml',
+							'title' => '',
+							'items' => [$stream]
+						};
+
+						$cb->($ret);
+					}
 				},
 				sub {
 					$log->error("Failed to get playlist stream URL");
