@@ -456,7 +456,7 @@ sub inboundTrackMetaData {
 
 
 			main::DEBUGLOG && $log->is_debug && $log->debug("NEW TRACK ...  $track");
-			
+
 			my $props = $song->pluginData('props');
 
 			$props->{title} = $track;
@@ -797,7 +797,7 @@ sub getBufferLength {
 
 sub generateProps {
 	my $json = shift;
-	
+
 	my $artwork = '';
 	if ( $json->{current_show}->{watermarked_artwork} ) {
 		$artwork = $json->{current_show}->{watermarked_artwork};
@@ -815,8 +815,8 @@ sub generateProps {
 		programmeId =>  $json->{current_show}->{programme_id},
 		artwork =>  $artwork,
 		realArtwork => $artwork,
-
 	};
+
 	main::DEBUGLOG && $log->is_debug && $log->debug('Props : ' . Dumper($props));
 	return $props;
 
@@ -914,6 +914,26 @@ sub explodePlaylist {
 					my $stream = shift;
 
 					$cb->([$stream]);
+				},
+				sub {
+					$log->error("Failed to get playlist stream URL");
+					$cb->([$uri]);
+				}
+			);
+		} elsif ( $uri =~ /_schedulecatchup_/gm) {
+			my $id = _getItemId($uri);
+			Plugins::GlobalPlayerUK::GlobalPlayerFeeder::getCatchupStreamUrl(
+				$id,
+				sub {
+					my $stream = shift;
+
+					my $ret ={
+						'type'  => 'opml',
+						'title' => '',
+						'items' => [$stream]
+					};
+
+					$cb->($ret);
 				},
 				sub {
 					$log->error("Failed to get playlist stream URL");
