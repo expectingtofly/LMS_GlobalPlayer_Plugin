@@ -58,7 +58,7 @@ sub toplevel {
 			passthrough =>[ { call => 'LiveMenu' } ]
 		},
 		{
-			name => 'Catch Up',
+			name => 'Schedules & Catch Up',
 			type => 'link',
 			url  => \&callAPI,
 			image => Plugins::GlobalPlayerUK::Utilities::IMG_CATCHUP,
@@ -93,6 +93,7 @@ sub callAPI {
 	my $callUrl = '';
 	my $parser;
 	my $cacheIndex = '';
+	my $extra = '';
 
 	if ($call eq 'LiveMenu') {
 		$callUrl = 'https://bff-web-guacamole.musicradio.com/globalplayer/brands';
@@ -118,6 +119,7 @@ sub callAPI {
 		my $station    = $passDict->{'station'};
 		$callUrl = "https://bff-web-guacamole.musicradio.com/globalplayer/catchups/$station/uk";
 		$parser = \&_parseCatchUpList;
+		$extra = $passDict->{'heraldId'};
 		$cacheIndex =  $callUrl;
 	} elsif ($call eq 'StationCatchupItems') {
 		my $id    = $passDict->{'id'};
@@ -133,6 +135,11 @@ sub callAPI {
 		my $searchstr = $args->{'search'};
 		$callUrl = 'https://bff-web-guacamole.musicradio.com/podcasts/search/?query=' . URI::Escape::uri_escape_utf8($searchstr);
 		$parser = \&_parsePodcastSearchResults;
+		$cacheIndex =  $callUrl;
+	} elsif ($call eq 'StationSchedules') {
+		my $heraldId = $passDict->{'station'};
+		$callUrl = "https://bff-mobile-guacamole.musicradio.com/schedules/$heraldId";
+		$parser = \&_parseSchedules;
 		$cacheIndex =  $callUrl;
 	} else {
 		$log->error("No API call for $call");
@@ -151,7 +158,7 @@ sub callAPI {
 	Slim::Networking::SimpleAsyncHTTP->new(
 		sub {
 			my $http = shift;
-			$parser->( $http, $callback, $cacheIndex );
+			$parser->( $http, $callback, $cacheIndex, $extra );
 		},
 
 		# Called when no response was received or an error occurred.
@@ -159,7 +166,10 @@ sub callAPI {
 			$log->warn("error: $_[1]");
 			$callback->( [ { name => $_[1], type => 'text' } ] );
 		}
-	)->get($callUrl);
+	)->get(
+		$callUrl,
+		'Accept' => 'application/vnd.global.8+json'
+	);
 	main::DEBUGLOG && $log->is_debug && $log->debug("--callAPI");
 	return;
 }
@@ -393,7 +403,7 @@ sub _parseStationList {
 		push  @$menu,
 		  {
 			name => $title,
-			type => 'audio',			
+			type => 'audio',
 			url    =>  'globalplayer://_live_' . $item->{heraldId},
 			image => $item->{brandLogo},
 			on_select   => 'play'
@@ -418,7 +428,7 @@ sub _parseStationList {
 sub _parseFullStationList {
 	my ( $http, $callback, $cacheIndex ) = @_;
 	main::DEBUGLOG && $log->is_debug && $log->debug("++_parseFullStationList");
-	
+
 	my $JSON = decode_json ${ $http->contentRef };
 
 	my $menu = [];
@@ -433,7 +443,7 @@ sub _parseFullStationList {
 		  {
 			name => $title,
 			type => 'audio',
-			url    =>  'globalplayer://_live_' . $item->{heraldId},		
+			url    =>  'globalplayer://_live_' . $item->{heraldId},
 			on_select   => 'play'
 		  };
 	}
@@ -446,12 +456,22 @@ sub _parseFullStationList {
 
 
 sub _parseCatchUpList {
-	my ( $http, $callback, $cacheIndex ) = @_;
+	my ( $http, $callback, $cacheIndex, $heraldId ) = @_;
 	main::DEBUGLOG && $log->is_debug && $log->debug("++_parseCatchUpList");
 
 	my $JSON = decode_json ${ $http->contentRef };
 
 	my $menu = [];
+
+	push  @$menu,
+	  {
+		name   => 'Schedules',
+		type   => 'link',
+		url    => '',
+		image  => Plugins::GlobalPlayerUK::Utilities::IMG_CATCHUP,
+		passthrough =>[ { call => 'StationSchedules', station => $heraldId, codeRef => 'callAPI'} ]
+	  };
+
 
 	for my $item (@$JSON) {
 		push  @$menu,
@@ -474,6 +494,62 @@ sub _parseCatchUpList {
 }
 
 
+sub _parseSchedules {
+	my ( $http, $callback, $cacheIndex ) = @_;
+
+	main::DEBUGLOG && $log->is_debug && $log->debug("++_parseSchedules");
+
+	my $JSON = decode_json ${ $http->contentRef };
+
+	my $menu = [];
+
+	my $dates = $JSON->{schedule_dates};
+
+	@$dates = reverse sort {$a->{date} cmp $b->{date}} @$dates;
+
+	for my $day (@$dates) {
+		my $items = [];
+		my $programmes = $day->{episodes};
+		if ($day->{date_status} ne 'FUTURE') {
+			for my $item (@$programmes) {
+				if ( $item->{status} eq 'PUBLISHED' ) {
+					my $stream = 'globalplayer://_schedulecatchup_' . $item->{id};
+					push  @$items,
+					  {
+						name => $item->{time_slot} . ' ' . $item->{title},
+						type => 'playlist',
+						url     => $stream,
+						image => $item->{image_url},
+						on_select   => 'play'
+					  };
+				} else {
+					push  @$items,
+					  {
+						name => $item->{time_slot} . ' ' . $item->{title},
+						type => 'link',						
+						image => $item->{image_url}						
+					  };
+
+				}
+			}
+			my $epoch = str2time($day->{date});
+			my $formatTime = strftime( '%A %d/%m', localtime($epoch) );
+			push @$menu,
+			  {
+				name => $formatTime,
+				type => 'link',
+				items => $items,
+			  };
+		}
+	}
+	_cacheMenu($cacheIndex, $menu, 600);
+	_renderMenuCodeRefs($menu);
+	$callback->( { items => $menu } );
+	main::DEBUGLOG && $log->is_debug && $log->debug("--_parseSchedules");
+	return;
+}
+
+
 sub _parseCatchUpStationList {
 	my ( $http, $callback, $cacheIndex ) = @_;
 	main::DEBUGLOG && $log->is_debug && $log->debug("++_parseCatchUpStationList");
@@ -489,7 +565,7 @@ sub _parseCatchUpStationList {
 			type => 'link',
 			url         => '',
 			image => $item->{brandLogo},
-			passthrough =>[ { call => 'StationCatchUps', station => $item->{brandSlug},  codeRef => 'callAPI'} ]
+			passthrough =>[ { call => 'StationCatchUps', station => $item->{brandSlug}, heraldId => $item->{heraldId},  codeRef => 'callAPI'} ]
 		  };
 	}
 	_cacheMenu($cacheIndex, $menu, 600);
@@ -521,6 +597,44 @@ sub getPlaylistStreamUrl {
 	)->get($callUrl);
 
 	main::DEBUGLOG && $log->is_debug && $log->debug("--getPlaylistStreamUrl");
+	return;
+}
+
+
+sub getCatchupStreamUrl {
+	my ( $id, $cbY, $cbN ) = @_;
+	main::DEBUGLOG && $log->is_debug && $log->debug("++getCatchupStreamUrl");
+
+	my $callUrl = "https://bff-mobile-guacamole.musicradio.com/schedules/episodes/$id";
+
+	main::DEBUGLOG && $log->is_debug && $log->debug("Call Url $callUrl");
+
+	Slim::Networking::SimpleAsyncHTTP->new(
+		sub {
+			my $http = shift;
+			my $JSON = decode_json ${ $http->contentRef };
+			$cbY->(				
+				{
+					name => $JSON->{title},
+					url => $JSON->{file_url},
+					image =>  $JSON->{image_url},
+					cover =>  $JSON->{image_url},
+					type => 'audio',
+				}
+			);
+		},
+
+		# Called when no response was received or an error occurred.
+		sub {
+			$log->warn("error: $_[1]");
+			$cbN->();
+		}
+	)->get(
+		$callUrl,
+		'Accept' => 'application/vnd.global.8+json'
+	);
+
+	main::DEBUGLOG && $log->is_debug && $log->debug("--getCatchupStreamUrl");
 	return;
 }
 

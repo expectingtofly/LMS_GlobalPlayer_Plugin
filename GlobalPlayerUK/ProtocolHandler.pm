@@ -456,7 +456,7 @@ sub inboundTrackMetaData {
 
 
 			main::DEBUGLOG && $log->is_debug && $log->debug("NEW TRACK ...  $track");
-			
+
 			my $props = $song->pluginData('props');
 
 			$props->{title} = $track;
@@ -798,6 +798,13 @@ sub getBufferLength {
 sub generateProps {
 	my $json = shift;
 
+	my $artwork = '';
+	if ( $json->{current_show}->{watermarked_artwork} ) {
+		$artwork = $json->{current_show}->{watermarked_artwork};
+	} else {
+		$artwork = $json->{current_show}->{artwork};
+	}
+
 	my $props = {
 		m3u8 => $json->{current_show}->{live_restart_url},
 		start => $json->{current_show}->{start},
@@ -806,10 +813,10 @@ sub generateProps {
 		realTitle =>  $json->{current_show}->{name},
 		schedule =>  $json->{current_show}->{schedule},
 		programmeId =>  $json->{current_show}->{programme_id},
-		artwork =>  $json->{current_show}->{artwork},
-		realArtwork => $json->{current_show}->{artwork},
-
+		artwork =>  $artwork,
+		realArtwork => $artwork,
 	};
+
 	main::DEBUGLOG && $log->is_debug && $log->debug('Props : ' . Dumper($props));
 	return $props;
 
@@ -875,10 +882,14 @@ sub getMetadataFor {
 	my $meta = {title => $url};
 	if ( $song && $song->currentTrack()->url eq $full_url ) {
 		if (my $props = $song->pluginData('props') ) {
+			my $artist = $props->{'realTitle'};
+			if ( $props->{'schedule'} )  {
+				$artist .= ' ' . $props->{'schedule'};
+			}
 			$meta = {
 				title => $props->{'title'},
 				cover => $props->{'artwork'},
-				artist => $props->{'realTitle'} . ' ' . $props->{'schedule'},
+				artist => $artist,
 				type => 'AAC',
 				bitrate => 'VBR',
 			};
@@ -903,6 +914,32 @@ sub explodePlaylist {
 					my $stream = shift;
 
 					$cb->([$stream]);
+				},
+				sub {
+					$log->error("Failed to get playlist stream URL");
+					$cb->([$uri]);
+				}
+			);
+		} elsif ( $uri =~ /_schedulecatchup_/gm) {
+			my $id = _getItemId($uri);
+			Plugins::GlobalPlayerUK::GlobalPlayerFeeder::getCatchupStreamUrl(
+				$id,
+				sub {
+					my $stream = shift;
+
+					if ($main::VERSION lt '8.2.0') {
+						$cb->([$stream->{url}]);
+					} else {
+
+
+						my $ret ={
+							'type'  => 'opml',
+							'title' => '',
+							'items' => [$stream]
+						};
+
+						$cb->($ret);
+					}
 				},
 				sub {
 					$log->error("Failed to get playlist stream URL");
