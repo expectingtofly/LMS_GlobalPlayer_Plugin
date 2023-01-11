@@ -524,6 +524,13 @@ sub _parseSchedules {
 						image => $item->{image_url},
 						on_select   => 'play'
 					  };
+				} else {
+					push  @$items,
+					  {
+						name => $item->{time_slot} . ' ' . $item->{title},
+						type => 'link',						
+						image => $item->{image_url}						
+					  };
 
 				}
 			}
