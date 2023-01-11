@@ -58,7 +58,7 @@ sub toplevel {
 			passthrough =>[ { call => 'LiveMenu' } ]
 		},
 		{
-			name => 'Catch Up',
+			name => 'Schedules & Catch Up',
 			type => 'link',
 			url  => \&callAPI,
 			image => Plugins::GlobalPlayerUK::Utilities::IMG_CATCHUP,
