@@ -493,8 +493,6 @@ sub _parseCatchUpList {
 	return;
 }
 
-my $menu = [];
-
 
 sub _parseSchedules {
 	my ( $http, $callback, $cacheIndex ) = @_;
