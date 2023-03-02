@@ -329,8 +329,14 @@ sub new {
 	}
 
 	if ($startTime) {
-		main::DEBUGLOG && $log->is_debug && $log->debug("Proposed Seek $startTime  -  offset $seekdata->{'timeOffset'}");
-		$isSeeking = 1;
+		main::DEBUGLOG && $log->is_debug && $log->debug("Proposed Seek $startTime  -  offset $seekdata->{'timeOffset'}  old finish $props->{'finish'} ");
+		#We can only recover from a pause if we are within the current programme
+		if ( str2time($props->{'finish'}) < time() ) {
+			$log->warn('Not seeking and returning to live as paused too long');
+			$isSeeking = 0;
+		} else {
+			$isSeeking = 1;
+		}
 	}
 
 
