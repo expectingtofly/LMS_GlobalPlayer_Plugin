@@ -706,7 +706,7 @@ sub sysread {
 								main::DEBUGLOG && $log->is_debug && $log->debug("Last item end streaming $v->{'lastArr'} ");
 								$v->{'streaming'} = 0;
 							}
-							$v->{'retryCount'} = 0							;
+							$v->{'retryCount'} = 0;
 							$v->{'fetching'} = 0;
 
 						},
