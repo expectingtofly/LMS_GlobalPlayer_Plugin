@@ -44,6 +44,7 @@ use constant MIN_OUT    => 8192;
 use constant DATA_CHUNK => 128 * 1024;
 use constant CHUNK_SECONDS => 10;
 use constant END_OF_M3U8 => '#EXT-X-ENDLIST';
+use constant RETRY_LIMIT => 3;
 
 
 Slim::Player::ProtocolHandlers->registerHandler('globalplayer', __PACKAGE__);
@@ -382,6 +383,7 @@ sub new {
 		'seekOffset'=> $startTime,	# The seek offset
 		'bufferLength' => $bufferLength,	# The preferences for how much buffer time from live edge we use
 		'm3u8Delay'	=> 8,		# The seconds between checking for new m3u8 content, this reduces if nothing new.
+		'retryCount' => 0,      # Streaming retries
 	};
 
 	#Kick off looking for m3u8
@@ -704,13 +706,23 @@ sub sysread {
 								main::DEBUGLOG && $log->is_debug && $log->debug("Last item end streaming $v->{'lastArr'} ");
 								$v->{'streaming'} = 0;
 							}
+							$v->{'retryCount'} = 0							;
 							$v->{'fetching'} = 0;
+
 						},
 						onError => sub {
-
+							my ( $http, $error, $self ) = @_;
+							$v->{'retryCount'}++;
+							
+							if ($v->{'retryCount'} > RETRY_LIMIT) {
+								$log->error("Failed to connect to $url ($error) retry count exceeded ending stream");
+								$v->{'streaming'} = 0;
+							} else {
+								$log->info("Failed to connect to $url ($error) retrying...");
+								$v->{'arrayPlace'} -= 2;
+							}
+							
 							$v->{'fetching'} = 0;
-							$v->{'streaming'} = 0;
-							$log->error("Failed to stream");
 						}
 					}
 				);
