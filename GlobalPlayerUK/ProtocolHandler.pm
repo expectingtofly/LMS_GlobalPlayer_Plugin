@@ -660,7 +660,7 @@ sub sysread {
 
 						main::DEBUGLOG && $log->is_debug && $log->debug("Seeking and using the time : $epoch ");
 					}
-					my $liveTime = strftime( '%Y%m%d_%H%M%S', localtime($epoch) );
+					my $liveTime = strftime( '%Y%m%d_%H%M%S', gmtime($epoch) );
 
 					$self->setM3U8Array($liveTime);
 
