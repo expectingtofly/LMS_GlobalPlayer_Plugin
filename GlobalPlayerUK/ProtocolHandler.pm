@@ -844,6 +844,7 @@ sub readM3u8 {
 	my $session = Slim::Networking::Async::HTTP->new;
 
 	my $request = HTTP::Request->new( GET => $m3u8 );
+	$request->protocol('HTTP/1.1');
 	if ($headers) {
 		$request->header( 'If-Modified-Since' => $headers->header('Last-Modified') );
 		$request->header( 'If-None-Match' => $headers->header('ETag') );
