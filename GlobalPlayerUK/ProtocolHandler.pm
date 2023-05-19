@@ -441,7 +441,7 @@ sub trackMetaData {
 			},
 			sub {
 				my $readin = shift;
-				main::DEBUGLOG && $log->is_debug && $log->debug("message arrived");
+				main::DEBUGLOG && $log->is_debug && $log->debug("message arrived " . $readin . ' - ' . length($readin));
 				$self->inboundTrackMetaData($readin);
 			}
 		);
@@ -457,7 +457,8 @@ sub inboundTrackMetaData {
 	my $song  = ${*$self}{'song'};
 	my $client = ${*$self}{'client'};
 
-	if (my $json = decode_json($metaData)) {
+	if ( length($metaData) > 5 ) {
+		my $json = decode_json($metaData);
 		if ( $json->{'now_playing'}->{'type'} eq 'track') {
 
 			my $track = $json->{'now_playing'}->{'title'} . ' by ' . $json->{'now_playing'}->{'artist'};
@@ -490,6 +491,7 @@ sub inboundTrackMetaData {
 		}
 
 	} else {
+		$v->{'lastTrackData'} = 0;
 		$log->warn(" ws failed with no json ");
 	}
 
