@@ -518,9 +518,8 @@ sub inboundMetaData {
 	my $v        = $self->vars;
 	my $song  = ${*$self}{'song'};
 
-	if (my $json = decode_json($metaData)) {
-
-
+	if ( length($metaData) > 5 ) {	
+		my $json = decode_json($metaData);
 		my $props = generateProps($json);
 		main::DEBUGLOG && $log->is_debug && $log->debug("we have m3u8 : ". $props->{m3u8});
 
