@@ -590,7 +590,10 @@ sub readTrackWS {
 			Slim::Utils::Timers::setTimer($self, time() + 5, \&readTrackWS);
 		},
 		sub {
-			$log->warn("Failed to read track WebSocket");
+			$log->warn("Failed to read track WebSocket -> reconnecting...");
+			$v->{'trackWS'}->wsclose();
+			$v->{'trackWS'} = 0;
+			Slim::Utils::Timers::setTimer($self, time() + 30, \&trackMetaData);
 		},
 		sub {
 			Slim::Utils::Timers::setTimer($self, time() + 5, \&readTrackWS);
