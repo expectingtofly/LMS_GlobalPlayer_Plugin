@@ -500,7 +500,9 @@ sub sendHeartBeat {
 	my $self = shift;
 	my $v        = $self->vars;
 	main::DEBUGLOG && $log->is_debug && $log->debug("sending ws heartbeat");
-	$v->{'trackWS'}->wssend('heartbeat');
+	if ($v->{'trackWS'}) {
+		$v->{'trackWS'}->wssend('heartbeat');
+	}
 	Slim::Utils::Timers::setTimer($self, time() + 30, \&sendHeartBeat);
 }
 
