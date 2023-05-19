@@ -144,6 +144,7 @@ sub wsconnect {
 			my ($buf) = @_;
 			main::INFOLOG && $log->is_info && $log->info("Ping sent, sending pong : " . sprintf("%v02X", $buf));			
 			$client->pong($buf);
+			$cbRead->('');
 		}
 	);
 
