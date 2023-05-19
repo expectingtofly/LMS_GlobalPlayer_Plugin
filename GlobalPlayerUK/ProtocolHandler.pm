@@ -399,6 +399,10 @@ sub new {
 				},
 				sub {
 					$log->warn("Failed to read WebSocket");
+				},
+				sub {
+					main::DEBUGLOG && $log->is_debug && $log->debug("Nothing there kick off timer again");
+					Slim::Utils::Timers::setTimer($self, time() + 1, \&readWS);
 				}
 			);
 		},
