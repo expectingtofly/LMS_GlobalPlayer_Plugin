@@ -495,8 +495,7 @@ sub inboundTrackMetaData {
 		}
 
 	} else {
-		$v->{'lastTrackData'} = 0;
-		$log->warn(" ws failed with no json ");
+		main::DEBUGLOG && $log->is_debug && $log->debug("No Json in payload, probably ping");
 	}
 
 }
@@ -593,15 +592,18 @@ sub readTrackWS {
 	$v->{'trackWS'}->wsreceive(
 		0.1,
 		sub {
+			main::DEBUGLOG && $log->is_debug && $log->debug("Message Yes");
 			Slim::Utils::Timers::setTimer($self, time() + 5, \&readTrackWS);
 		},
 		sub {
+			main::DEBUGLOG && $log->is_debug && $log->debug("Message No");
 			$log->warn("Failed to read track WebSocket -> reconnecting...");
 			$v->{'trackWS'}->wsclose();
 			$v->{'trackWS'} = 0;
 			Slim::Utils::Timers::setTimer($self, time() + 30, \&trackMetaData);
 		},
 		sub {
+			main::DEBUGLOG && $log->is_debug && $log->debug("Message No Data");
 			Slim::Utils::Timers::setTimer($self, time() + 5, \&readTrackWS);
 		}
 	);
