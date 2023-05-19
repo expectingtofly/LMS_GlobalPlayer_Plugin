@@ -691,43 +691,37 @@ sub sysread {
 				main::DEBUGLOG && $log->is_debug && $log->debug("Now at  $v->{'arrayPlace'} ending at $v->{'lastArr'} ");
 
 				$v->{'arrayPlace'} += 2;
-
-				my $headers = [ 'Connection', 'keep-alive' ];
-				my $request = HTTP::Request->new( GET => $url, $headers);
-				$request->protocol('HTTP/1.1');
-
-
-				$v->{'session'}->send_request(
-					{
-						request => $request,
-						onBody => sub {
-							my $response = shift->response;
-							main::DEBUGLOG && $log->is_debug && $log->debug("got chunk length: " . length $response->content . " for $url");
-							$v->{'inBuf'} .= $response->content;
-							if ($v->{'arrayPlace'} > $v->{'lastArr'}) {
-								main::DEBUGLOG && $log->is_debug && $log->debug("Last item end streaming $v->{'lastArr'} ");
-								$v->{'streaming'} = 0;
-							}
-							$v->{'retryCount'} = 0;
-							$v->{'fetching'} = 0;
-
-						},
-						onError => sub {
-							my ( $http, $error, $self ) = @_;
-							$v->{'retryCount'}++;
-							
-							if ($v->{'retryCount'} > RETRY_LIMIT) {
-								$log->error("Failed to connect to $url ($error) retry count exceeded ending stream");
-								$v->{'streaming'} = 0;
-							} else {
-								$log->info("Failed to connect to $url ($error) retrying...");
-								$v->{'arrayPlace'} -= 2;
-							}
-							
-							$v->{'fetching'} = 0;
+					
+				Slim::Networking::SimpleAsyncHTTP->new(
+					sub {
+						my $http = shift;
+						main::DEBUGLOG && $log->is_debug && $log->debug("got chunk length: " . length ${ $http->contentRef }. " for $url");
+						$v->{'inBuf'} .= ${ $http->contentRef };
+						if ($v->{'arrayPlace'} > $v->{'lastArr'}) {
+							main::DEBUGLOG && $log->is_debug && $log->debug("Last item end streaming $v->{'lastArr'} ");
+							$v->{'streaming'} = 0;
 						}
+						$v->{'retryCount'} = 0;
+						$v->{'fetching'} = 0;
+					},
+
+					# Called when no response was received or an error occurred.
+					sub {
+						$log->warn("error: $_[1]");
+						$v->{'retryCount'}++;
+							
+						if ($v->{'retryCount'} > RETRY_LIMIT) {
+							$log->error("Failed to connect to $url ($_[1]) retry count exceeded ending stream");
+							$v->{'streaming'} = 0;
+						} else {
+							$log->info("Failed to connect to $url ($_[1]) retrying...");
+							$v->{'arrayPlace'} -= 2;
+						}
+						
+						$v->{'fetching'} = 0;
+						
 					}
-				);
+				)->get($url);
 			}
 		}
 	}
