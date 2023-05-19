@@ -545,14 +545,16 @@ sub inboundMetaData {
 			main::DEBUGLOG && $log->is_debug && $log->debug("Closed Initial Web Socket");
 			return;
 		}
-
-
 	} else {
-		$log->warn("Could not decode JSON");
+		$log->warn("No Meta Data JSON : Could be server ping");
 	}
+	#Unsubscribe, then resubscribe to kick off a new attempt at reading
+	$v->{'ws'}->wssend('{"actions":[{"type":"unsubscribe","stream_id":"' . $v->{'stationId'} . '"}]}');
+	$v->{'ws'}->wssend('{"actions":[{"type":"subscribe","service":"' . $v->{'stationId'} . '"}]}');
+
 
 	main::DEBUGLOG && $log->is_debug && $log->debug("Initiate original meta timer");
-	Slim::Utils::Timers::setTimer($self, time() + 1, \&readWS);
+	Slim::Utils::Timers::setTimer($self, time() + 3, \&readWS);
 
 
 	return;
