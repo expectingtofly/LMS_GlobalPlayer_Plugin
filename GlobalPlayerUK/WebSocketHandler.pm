@@ -41,6 +41,7 @@ sub new {
 		client     => 0,         
 		tcp_socket   => 0,    
 		socket_open  => 0,   
+		pong_count   => 0,
 	};
 	
 	bless $self, $class;
@@ -137,6 +138,18 @@ sub wsconnect {
 	);
 
 
+	$self->{client}->on(
+		ping => sub {
+			my $client = shift;
+			my ($buf) = @_;
+			main::INFOLOG && $log->is_info && $log->info("Ping sent, sending pong : " . sprintf("%v02X", $buf));			
+			$client->pong($buf);
+			$cbRead->('');
+		}
+	);
+
+
+
 	main::INFOLOG && $log->is_info && $log->info("connecting to client");
 	$self->{client}->connect;
 
@@ -177,8 +190,9 @@ sub wsreceive {
 	$s->add($self->{tcp_socket});
 	$! = 0;
 	my @ready = $s->can_read($timeout);
+	
 	if (@ready) {
-		main::DEBUGLOG && $log->is_debug && $log->debug("handles : " . Dumper(@ready));
+		main::DEBUGLOG && $log->is_debug && $log->debug("res : $! handles : " . Dumper(@ready));
 		my $recv_data;
 		my $bytes_read = sysread $ready[0], $recv_data, 16384;
 		if (!defined $bytes_read) {
@@ -187,9 +201,10 @@ sub wsreceive {
 		} elsif ($bytes_read == 0) {
 
 			# Remote socket closed
-			$log->warn("Connection terminated by remote.");
+			$log->warn("Connection terminated by remote. $!");
 			$cbN->();
 		} else {
+	
 			$cbY->();
 			main::DEBUGLOG && $log->is_debug && $log->debug("Received data : " . Dumper($recv_data));
 			$self->{client}->read($recv_data);
@@ -205,6 +220,7 @@ sub wsreceive {
 	}
 
 }
+
 
 sub wsclose {
 	my ($self) = @_;

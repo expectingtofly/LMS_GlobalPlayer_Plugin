@@ -330,9 +330,9 @@ sub new {
 	}
 
 	if ($startTime) {
-		main::DEBUGLOG && $log->is_debug && $log->debug("Proposed Seek $startTime  -  offset $seekdata->{'timeOffset'}  old finish $props->{'finish'} ");
+		main::DEBUGLOG && $log->is_debug && $log->debug("Proposed Seek $startTime  -  offset $seekdata->{'timeOffset'}   ");
 		#We can only recover from a pause if we are within the current programme
-		if ( str2time($props->{'finish'}) < time() ) {
+		if ( (!$props->{'finish'}) || str2time($props->{'finish'}) < time() ) {
 			$log->warn('Not seeking and returning to live as paused too long');
 			$isSeeking = 0;
 		} else {
@@ -399,6 +399,10 @@ sub new {
 				},
 				sub {
 					$log->warn("Failed to read WebSocket");
+				},
+				sub {
+					main::DEBUGLOG && $log->is_debug && $log->debug("Nothing there kick off timer again");
+					Slim::Utils::Timers::setTimer($self, time() + 1, \&readWS);
 				}
 			);
 		},
@@ -441,7 +445,7 @@ sub trackMetaData {
 			},
 			sub {
 				my $readin = shift;
-				main::DEBUGLOG && $log->is_debug && $log->debug("message arrived");
+				main::DEBUGLOG && $log->is_debug && $log->debug("message arrived " . $readin . ' - ' . length($readin));
 				$self->inboundTrackMetaData($readin);
 			}
 		);
@@ -457,7 +461,8 @@ sub inboundTrackMetaData {
 	my $song  = ${*$self}{'song'};
 	my $client = ${*$self}{'client'};
 
-	if (my $json = decode_json($metaData)) {
+	if ( length($metaData) > 5 ) {
+		my $json = decode_json($metaData);
 		if ( $json->{'now_playing'}->{'type'} eq 'track') {
 
 			my $track = $json->{'now_playing'}->{'title'} . ' by ' . $json->{'now_playing'}->{'artist'};
@@ -490,7 +495,7 @@ sub inboundTrackMetaData {
 		}
 
 	} else {
-		$log->warn(" ws failed with no json ");
+		main::DEBUGLOG && $log->is_debug && $log->debug("No Json in payload, probably ping");
 	}
 
 }
@@ -500,7 +505,9 @@ sub sendHeartBeat {
 	my $self = shift;
 	my $v        = $self->vars;
 	main::DEBUGLOG && $log->is_debug && $log->debug("sending ws heartbeat");
-	$v->{'trackWS'}->wssend('heartbeat');
+	if ($v->{'trackWS'}) {
+		$v->{'trackWS'}->wssend('heartbeat');
+	}
 	Slim::Utils::Timers::setTimer($self, time() + 30, \&sendHeartBeat);
 }
 
@@ -511,9 +518,8 @@ sub inboundMetaData {
 	my $v        = $self->vars;
 	my $song  = ${*$self}{'song'};
 
-	if (my $json = decode_json($metaData)) {
-
-
+	if ( length($metaData) > 5 ) {	
+		my $json = decode_json($metaData);
 		my $props = generateProps($json);
 		main::DEBUGLOG && $log->is_debug && $log->debug("we have m3u8 : ". $props->{m3u8});
 
@@ -537,14 +543,16 @@ sub inboundMetaData {
 			main::DEBUGLOG && $log->is_debug && $log->debug("Closed Initial Web Socket");
 			return;
 		}
-
-
 	} else {
-		$log->warn("Could not decode JSON");
+		$log->warn("No Meta Data JSON : Could be server ping");
 	}
+	#Unsubscribe, then resubscribe to kick off a new attempt at reading
+	$v->{'ws'}->wssend('{"actions":[{"type":"unsubscribe","stream_id":"' . $v->{'stationId'} . '"}]}');
+	$v->{'ws'}->wssend('{"actions":[{"type":"subscribe","service":"' . $v->{'stationId'} . '"}]}');
+
 
 	main::DEBUGLOG && $log->is_debug && $log->debug("Initiate original meta timer");
-	Slim::Utils::Timers::setTimer($self, time() + 1, \&readWS);
+	Slim::Utils::Timers::setTimer($self, time() + 3, \&readWS);
 
 
 	return;
@@ -583,12 +591,18 @@ sub readTrackWS {
 	$v->{'trackWS'}->wsreceive(
 		0.1,
 		sub {
+			main::DEBUGLOG && $log->is_debug && $log->debug("Message Yes");
 			Slim::Utils::Timers::setTimer($self, time() + 5, \&readTrackWS);
 		},
 		sub {
-			$log->warn("Failed to read track WebSocket");
+			main::DEBUGLOG && $log->is_debug && $log->debug("Message No");
+			$log->warn("Failed to read track WebSocket -> reconnecting...");
+			$v->{'trackWS'}->wsclose();
+			$v->{'trackWS'} = 0;
+			Slim::Utils::Timers::setTimer($self, time() + 30, \&trackMetaData);
 		},
 		sub {
+			main::DEBUGLOG && $log->is_debug && $log->debug("Message No Data");
 			Slim::Utils::Timers::setTimer($self, time() + 5, \&readTrackWS);
 		}
 	);
@@ -689,43 +703,37 @@ sub sysread {
 				main::DEBUGLOG && $log->is_debug && $log->debug("Now at  $v->{'arrayPlace'} ending at $v->{'lastArr'} ");
 
 				$v->{'arrayPlace'} += 2;
-
-				my $headers = [ 'Connection', 'keep-alive' ];
-				my $request = HTTP::Request->new( GET => $url, $headers);
-				$request->protocol('HTTP/1.1');
-
-
-				$v->{'session'}->send_request(
-					{
-						request => $request,
-						onBody => sub {
-							my $response = shift->response;
-							main::DEBUGLOG && $log->is_debug && $log->debug("got chunk length: " . length $response->content . " for $url");
-							$v->{'inBuf'} .= $response->content;
-							if ($v->{'arrayPlace'} > $v->{'lastArr'}) {
-								main::DEBUGLOG && $log->is_debug && $log->debug("Last item end streaming $v->{'lastArr'} ");
-								$v->{'streaming'} = 0;
-							}
-							$v->{'retryCount'} = 0;
-							$v->{'fetching'} = 0;
-
-						},
-						onError => sub {
-							my ( $http, $error, $self ) = @_;
-							$v->{'retryCount'}++;
-							
-							if ($v->{'retryCount'} > RETRY_LIMIT) {
-								$log->error("Failed to connect to $url ($error) retry count exceeded ending stream");
-								$v->{'streaming'} = 0;
-							} else {
-								$log->info("Failed to connect to $url ($error) retrying...");
-								$v->{'arrayPlace'} -= 2;
-							}
-							
-							$v->{'fetching'} = 0;
+					
+				Slim::Networking::SimpleAsyncHTTP->new(
+					sub {
+						my $http = shift;
+						main::DEBUGLOG && $log->is_debug && $log->debug("got chunk length: " . length ${ $http->contentRef }. " for $url");
+						$v->{'inBuf'} .= ${ $http->contentRef };
+						if ($v->{'arrayPlace'} > $v->{'lastArr'}) {
+							main::DEBUGLOG && $log->is_debug && $log->debug("Last item end streaming $v->{'lastArr'} ");
+							$v->{'streaming'} = 0;
 						}
+						$v->{'retryCount'} = 0;
+						$v->{'fetching'} = 0;
+					},
+
+					# Called when no response was received or an error occurred.
+					sub {
+						$log->warn("error: $_[1]");
+						$v->{'retryCount'}++;
+							
+						if ($v->{'retryCount'} > RETRY_LIMIT) {
+							$log->error("Failed to connect to $url ($_[1]) retry count exceeded ending stream");
+							$v->{'streaming'} = 0;
+						} else {
+							$log->info("Failed to connect to $url ($_[1]) retrying...");
+							$v->{'arrayPlace'} -= 2;
+						}
+						
+						$v->{'fetching'} = 0;
+						
 					}
-				);
+				)->get($url);
 			}
 		}
 	}
@@ -848,6 +856,7 @@ sub readM3u8 {
 	my $session = Slim::Networking::Async::HTTP->new;
 
 	my $request = HTTP::Request->new( GET => $m3u8 );
+	$request->protocol('HTTP/1.1');
 	if ($headers) {
 		$request->header( 'If-Modified-Since' => $headers->header('Last-Modified') );
 		$request->header( 'If-None-Match' => $headers->header('ETag') );

@@ -82,9 +82,10 @@ sub next {
     my $self = shift;
 
     my $bytes = $self->next_bytes;
+    
     return unless defined $bytes;
-
-    return Encode::decode('UTF-8', $bytes);
+    return Encode::decode('UTF-8', $bytes) unless $self->is_ping(); 
+    return $bytes;
 }
 
 sub fin {
