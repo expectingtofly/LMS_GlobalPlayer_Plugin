@@ -331,6 +331,7 @@ sub new {
 
 	if ($startTime) {
 		main::DEBUGLOG && $log->is_debug && $log->debug("Proposed Seek $startTime  -  offset $seekdata->{'timeOffset'}   ");
+
 		#We can only recover from a pause if we are within the current programme
 		if ( (!$props->{'finish'}) || str2time($props->{'finish'}) < time() ) {
 			$log->warn('Not seeking and returning to live as paused too long');
@@ -472,7 +473,8 @@ sub inboundTrackMetaData {
 
 			my $props = $song->pluginData('props');
 
-			$props->{title} = $track;
+			$props->{title} = $json->{'now_playing'}->{'title'};
+			$props->{artist} = $json->{'now_playing'}->{'artist'};
 			$props->{artwork} =  $json->{'now_playing'}->{'artwork'};
 
 			if ($track ne $v->{'trackData'}) {
@@ -518,7 +520,7 @@ sub inboundMetaData {
 	my $v        = $self->vars;
 	my $song  = ${*$self}{'song'};
 
-	if ( length($metaData) > 5 ) {	
+	if ( length($metaData) > 5 ) {
 		my $json = decode_json($metaData);
 		my $props = generateProps($json);
 		main::DEBUGLOG && $log->is_debug && $log->debug("we have m3u8 : ". $props->{m3u8});
@@ -546,6 +548,7 @@ sub inboundMetaData {
 	} else {
 		$log->warn("No Meta Data JSON : Could be server ping");
 	}
+
 	#Unsubscribe, then resubscribe to kick off a new attempt at reading
 	$v->{'ws'}->wssend('{"actions":[{"type":"unsubscribe","stream_id":"' . $v->{'stationId'} . '"}]}');
 	$v->{'ws'}->wssend('{"actions":[{"type":"subscribe","service":"' . $v->{'stationId'} . '"}]}');
@@ -613,6 +616,7 @@ sub readTrackWS {
 		my $client = ${*$self}{'client'};
 
 		$props->{title} = $props->{realTitle};
+		$props->{artist} = $props->{realArtist};
 		$props->{artwork} =  $props->{realArtwork};
 
 		Slim::Music::Info::setDelayedCallback(
@@ -703,7 +707,7 @@ sub sysread {
 				main::DEBUGLOG && $log->is_debug && $log->debug("Now at  $v->{'arrayPlace'} ending at $v->{'lastArr'} ");
 
 				$v->{'arrayPlace'} += 2;
-					
+
 				Slim::Networking::SimpleAsyncHTTP->new(
 					sub {
 						my $http = shift;
@@ -721,7 +725,7 @@ sub sysread {
 					sub {
 						$log->warn("error: $_[1]");
 						$v->{'retryCount'}++;
-							
+
 						if ($v->{'retryCount'} > RETRY_LIMIT) {
 							$log->error("Failed to connect to $url ($_[1]) retry count exceeded ending stream");
 							$v->{'streaming'} = 0;
@@ -729,9 +733,9 @@ sub sysread {
 							$log->info("Failed to connect to $url ($_[1]) retrying...");
 							$v->{'arrayPlace'} -= 2;
 						}
-						
+
 						$v->{'fetching'} = 0;
-						
+
 					}
 				)->get($url);
 			}
@@ -836,7 +840,9 @@ sub generateProps {
 		start => $json->{current_show}->{start},
 		finish => $json->{current_show}->{finish},
 		title =>  $json->{current_show}->{name},
-		realTitle =>  $json->{current_show}->{name},
+		realTitle => $json->{current_show}->{name},
+		artist => $json->{current_show}->{schedule},
+		realArtist =>  $json->{current_show}->{schedule},
 		schedule =>  $json->{current_show}->{schedule},
 		programmeId =>  $json->{current_show}->{programme_id},
 		artwork =>  $artwork,
@@ -909,14 +915,10 @@ sub getMetadataFor {
 	my $meta = {title => $url};
 	if ( $song && $song->currentTrack()->url eq $full_url ) {
 		if (my $props = $song->pluginData('props') ) {
-			my $artist = $props->{'realTitle'};
-			if ( $props->{'schedule'} )  {
-				$artist .= ' ' . $props->{'schedule'};
-			}
 			$meta = {
 				title => $props->{'title'},
 				cover => $props->{'artwork'},
-				artist => $artist,
+				artist => $props->{'artist'},
 				type => 'AAC',
 				bitrate => 'VBR',
 			};
