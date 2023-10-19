@@ -157,58 +157,6 @@ sub transitionType {
 }
 
 
-sub getm3u8Arr {
-	my $url = shift;
-	my $cbY = shift;
-	my $cbN = shift;
-	my $heraldid = _getItemId($url);
-	my $ws = Plugins::GlobalPlayerUK::WebSocketHandler->new();
-	$ws->wsconnect(
-		'wss://metadata.musicradio.com/v2/now-playing',
-		sub {#success
-			main::DEBUGLOG && $log->is_debug && $log->debug("Connected to WS");
-			$ws->wssend('{"actions":[{"type":"subscribe","service":"' . $heraldid . '"}]}');
-			$ws->wsreceive(
-				0.1,
-				sub {
-					main::DEBUGLOG && $log->is_debug && $log->debug("Read succeeded");
-				},
-				sub {
-					$log->warn("Failed to read WebSocket");
-					$cbN->();
-				}
-			);
-		},
-		sub {#fail
-			my $result = shift;
-			$log->warn("Failed to connect to WebSocket : $result");
-			$cbN->();
-		},
-		sub {#Read
-			my $readin = shift;
-			main::DEBUGLOG && $log->is_debug && $log->debug("read WS : $readin");
-			my $json = decode_json($readin);
-			$ws->wssend('{"actions":[{"type":"unsubscribe","stream_id":"' . $heraldid . '"}]}');
-			$ws->wsclose();
-			readM3u8(
-				$json->{current_show}->{live_restart_url},
-				sub {
-					my $in = shift;
-					$cbY->($in,  $json );
-
-				},
-				sub {
-					$log->warn("Failed to get m3u8");
-					$cbN->();
-				}
-			);
-
-		}
-	);
-
-}
-
-
 sub close {
 	my $self = shift;
 	my $v =  ${*$self}{'vars'};
@@ -331,6 +279,7 @@ sub new {
 
 	if ($startTime) {
 		main::DEBUGLOG && $log->is_debug && $log->debug("Proposed Seek $startTime  -  offset $seekdata->{'timeOffset'}   ");
+
 		#We can only recover from a pause if we are within the current programme
 		if ( (!$props->{'finish'}) || str2time($props->{'finish'}) < time() ) {
 			$log->warn('Not seeking and returning to live as paused too long');
@@ -472,7 +421,8 @@ sub inboundTrackMetaData {
 
 			my $props = $song->pluginData('props');
 
-			$props->{title} = $track;
+			$props->{title} = $json->{'now_playing'}->{'title'};
+			$props->{artist} = $json->{'now_playing'}->{'artist'};
 			$props->{artwork} =  $json->{'now_playing'}->{'artwork'};
 
 			if ($track ne $v->{'trackData'}) {
@@ -518,7 +468,7 @@ sub inboundMetaData {
 	my $v        = $self->vars;
 	my $song  = ${*$self}{'song'};
 
-	if ( length($metaData) > 5 ) {	
+	if ( length($metaData) > 5 ) {
 		my $json = decode_json($metaData);
 		my $props = generateProps($json);
 		main::DEBUGLOG && $log->is_debug && $log->debug("we have m3u8 : ". $props->{m3u8});
@@ -546,6 +496,7 @@ sub inboundMetaData {
 	} else {
 		$log->warn("No Meta Data JSON : Could be server ping");
 	}
+
 	#Unsubscribe, then resubscribe to kick off a new attempt at reading
 	$v->{'ws'}->wssend('{"actions":[{"type":"unsubscribe","stream_id":"' . $v->{'stationId'} . '"}]}');
 	$v->{'ws'}->wssend('{"actions":[{"type":"subscribe","service":"' . $v->{'stationId'} . '"}]}');
@@ -613,6 +564,7 @@ sub readTrackWS {
 		my $client = ${*$self}{'client'};
 
 		$props->{title} = $props->{realTitle};
+		$props->{artist} = $props->{realArtist};
 		$props->{artwork} =  $props->{realArtwork};
 
 		Slim::Music::Info::setDelayedCallback(
@@ -703,7 +655,7 @@ sub sysread {
 				main::DEBUGLOG && $log->is_debug && $log->debug("Now at  $v->{'arrayPlace'} ending at $v->{'lastArr'} ");
 
 				$v->{'arrayPlace'} += 2;
-					
+
 				Slim::Networking::SimpleAsyncHTTP->new(
 					sub {
 						my $http = shift;
@@ -721,7 +673,7 @@ sub sysread {
 					sub {
 						$log->warn("error: $_[1]");
 						$v->{'retryCount'}++;
-							
+
 						if ($v->{'retryCount'} > RETRY_LIMIT) {
 							$log->error("Failed to connect to $url ($_[1]) retry count exceeded ending stream");
 							$v->{'streaming'} = 0;
@@ -729,9 +681,9 @@ sub sysread {
 							$log->info("Failed to connect to $url ($_[1]) retrying...");
 							$v->{'arrayPlace'} -= 2;
 						}
-						
+
 						$v->{'fetching'} = 0;
-						
+
 					}
 				)->get($url);
 			}
@@ -752,10 +704,10 @@ sub sysread {
 		return $bytes;
 	} elsif ( $v->{'streaming'} ) {
 		if ($v->{'havem3u8'}) {
-			if ( !$v->{'m3u8Arr'} || (($v->{'arrayPlace'} > scalar @m3u8arr) && (!$v->{'fetching'}) && ( ($v->{'lastm3u8'} + $v->{'m3u8Delay'}) < time() ) ))  {
+			if ( !$v->{'fetching'} && (!$v->{'m3u8Arr'} || (($v->{'arrayPlace'} > scalar @m3u8arr) && ( ($v->{'lastm3u8'} + $v->{'m3u8Delay'}) < time() ))) )  {
 				main::DEBUGLOG && $log->is_debug && $log->debug('Getting Fresh M3u8 ' . Time::HiRes::time());
 				$v->{'fetching'} = 1;
-				readM3u8(
+				$self->readM3u8(
 					$v->{'m3u8'},
 					sub {
 						my $in=shift;
@@ -836,7 +788,9 @@ sub generateProps {
 		start => $json->{current_show}->{start},
 		finish => $json->{current_show}->{finish},
 		title =>  $json->{current_show}->{name},
-		realTitle =>  $json->{current_show}->{name},
+		realTitle => $json->{current_show}->{name},
+		artist => $json->{current_show}->{schedule},
+		realArtist =>  $json->{current_show}->{schedule},
 		schedule =>  $json->{current_show}->{schedule},
 		programmeId =>  $json->{current_show}->{programme_id},
 		artwork =>  $artwork,
@@ -850,11 +804,9 @@ sub generateProps {
 
 
 sub readM3u8 {
-	my ( $m3u8, $cbY, $cbN, $headers ) = @_;
+	my ( $self, $m3u8, $cbY, $cbN, $headers ) = @_;
 
-
-	my $session = Slim::Networking::Async::HTTP->new;
-
+	my $v = $self->vars;
 	my $request = HTTP::Request->new( GET => $m3u8 );
 	$request->protocol('HTTP/1.1');
 	if ($headers) {
@@ -864,7 +816,7 @@ sub readM3u8 {
 
 	main::DEBUGLOG && $log->is_debug && $log->debug('dump headers : ' . Dumper($request->headers));
 
-	$session->send_request(
+	$v->{'session'}->send_request(
 		{
 			request => $request,
 			onBody => sub {
@@ -909,14 +861,10 @@ sub getMetadataFor {
 	my $meta = {title => $url};
 	if ( $song && $song->currentTrack()->url eq $full_url ) {
 		if (my $props = $song->pluginData('props') ) {
-			my $artist = $props->{'realTitle'};
-			if ( $props->{'schedule'} )  {
-				$artist .= ' ' . $props->{'schedule'};
-			}
 			$meta = {
 				title => $props->{'title'},
 				cover => $props->{'artwork'},
-				artist => $artist,
+				artist => $props->{'artist'},
 				type => 'AAC',
 				bitrate => 'VBR',
 			};

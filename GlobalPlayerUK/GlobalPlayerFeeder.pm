@@ -43,6 +43,13 @@ my $prefs = preferences('plugin.globalplayeruk');
 my $cache = Slim::Utils::Cache->new();
 sub flushCache { $cache->cleanup(); }
 
+my $isRadioFavourites;
+
+
+sub init {
+	$isRadioFavourites = Slim::Utils::PluginManager->isEnabled('Plugins::RadioFavourites::Plugin');
+}
+
 
 sub toplevel {
 	my ( $client, $callback, $args ) = @_;
@@ -399,16 +406,25 @@ sub _parseStationList {
 		if (length $item->{tagline}) {
 			$tagline = ' - ' . $item->{tagline};
 		}
+
 		my $title = $item->{name} . $tagline;
-		push  @$menu,
-		  {
+		my $url = 'globalplayer://_live_' . $item->{heraldId};
+
+		my $service = {
 			name => $title,
 			type => 'audio',
-			url    =>  'globalplayer://_live_' . $item->{heraldId},
+			url => $url,
 			image => $item->{brandLogo},
 			on_select   => 'play'
-		  };
+		};
+
+		if ($isRadioFavourites) {
+			$service->{itemActions} = getItemActions($item->{name}, $url, $item->{heraldId});
+		}
+
+		push  @$menu, $service;
 	}
+
 	push  @$menu,
 	  {
 		name => 'Full Regional Radio',
@@ -439,13 +455,24 @@ sub _parseFullStationList {
 			$tagline = ' - ' . $item->{tagline};
 		}
 		my $title = $item->{name} . $tagline;
-		push  @$menu,
-		  {
+
+
+		my $url = 'globalplayer://_live_' . $item->{heraldId};
+
+		my $service = {
 			name => $title,
 			type => 'audio',
-			url    =>  'globalplayer://_live_' . $item->{heraldId},
+			url => $url,
+			image => $item->{brandLogo},
 			on_select   => 'play'
-		  };
+		};
+
+		if ($isRadioFavourites) {
+			$service->{itemActions} = getItemActions($item->{name}, $url, $item->{heraldId});
+		}
+
+		push  @$menu, $service;
+		
 	}
 
 	_cacheMenu($cacheIndex, $menu, 600);
@@ -526,8 +553,8 @@ sub _parseSchedules {
 					push  @$items,
 					  {
 						name => $item->{time_slot} . ' ' . $item->{title},
-						type => 'link',						
-						image => $item->{image_url}						
+						type => 'link',
+						image => $item->{image_url}
 					  };
 
 				}
@@ -613,7 +640,7 @@ sub getCatchupStreamUrl {
 		sub {
 			my $http = shift;
 			my $JSON = decode_json ${ $http->contentRef };
-			$cbY->(				
+			$cbY->(
 				{
 					name => $JSON->{title},
 					url => $JSON->{file_url},
@@ -687,6 +714,24 @@ sub _renderMenuCodeRefs {
 	}
 	main::DEBUGLOG && $log->is_debug && $log->debug("--_renderMenuCodeRefs");
 	return;
+}
+
+
+sub getItemActions {
+	my $name = shift;
+	my $url = shift;
+	my $key = shift;
+	return  {
+		info => {
+			command     => ['radiofavourites', 'addStation'],
+			fixedParams => {
+				name => $name,
+				stationKey => $key,
+				url => $url,
+				handlerFunctionKey => 'globalplayer'
+			}
+		},
+	};
 }
 
 1;

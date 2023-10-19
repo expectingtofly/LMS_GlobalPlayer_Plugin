@@ -29,6 +29,7 @@ use Slim::Utils::Prefs;
 
 use Plugins::GlobalPlayerUK::GlobalPlayerFeeder;
 use Plugins::GlobalPlayerUK::ProtocolHandler;
+use Plugins::GlobalPlayerUK::RadioFavourites;
 
 my $log = Slim::Utils::Log->addLogCategory(
 	{
@@ -62,6 +63,21 @@ sub initPlugin {
 
 
 
+	return;
+}
+
+sub postinitPlugin {
+	my $class = shift;
+
+	if (Slim::Utils::PluginManager->isEnabled('Plugins::RadioFavourites::Plugin')) {
+		Plugins::RadioFavourites::Plugin::addHandler(
+			{
+				handlerFunctionKey => 'globalplayer',      #The key to the handler				
+				handlerSub =>  \&Plugins::GlobalPlayerUK::RadioFavourites::getStationData          #The operation to handle getting the station data
+			}
+		);
+	}
+	Plugins::GlobalPlayerUK::GlobalPlayerFeeder::init();
 	return;
 }
 
