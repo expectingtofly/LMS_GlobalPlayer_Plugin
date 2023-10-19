@@ -157,58 +157,6 @@ sub transitionType {
 }
 
 
-sub getm3u8Arr {
-	my $url = shift;
-	my $cbY = shift;
-	my $cbN = shift;
-	my $heraldid = _getItemId($url);
-	my $ws = Plugins::GlobalPlayerUK::WebSocketHandler->new();
-	$ws->wsconnect(
-		'wss://metadata.musicradio.com/v2/now-playing',
-		sub {#success
-			main::DEBUGLOG && $log->is_debug && $log->debug("Connected to WS");
-			$ws->wssend('{"actions":[{"type":"subscribe","service":"' . $heraldid . '"}]}');
-			$ws->wsreceive(
-				0.1,
-				sub {
-					main::DEBUGLOG && $log->is_debug && $log->debug("Read succeeded");
-				},
-				sub {
-					$log->warn("Failed to read WebSocket");
-					$cbN->();
-				}
-			);
-		},
-		sub {#fail
-			my $result = shift;
-			$log->warn("Failed to connect to WebSocket : $result");
-			$cbN->();
-		},
-		sub {#Read
-			my $readin = shift;
-			main::DEBUGLOG && $log->is_debug && $log->debug("read WS : $readin");
-			my $json = decode_json($readin);
-			$ws->wssend('{"actions":[{"type":"unsubscribe","stream_id":"' . $heraldid . '"}]}');
-			$ws->wsclose();
-			readM3u8(
-				$json->{current_show}->{live_restart_url},
-				sub {
-					my $in = shift;
-					$cbY->($in,  $json );
-
-				},
-				sub {
-					$log->warn("Failed to get m3u8");
-					$cbN->();
-				}
-			);
-
-		}
-	);
-
-}
-
-
 sub close {
 	my $self = shift;
 	my $v =  ${*$self}{'vars'};
@@ -756,10 +704,10 @@ sub sysread {
 		return $bytes;
 	} elsif ( $v->{'streaming'} ) {
 		if ($v->{'havem3u8'}) {
-			if ( !$v->{'m3u8Arr'} || (($v->{'arrayPlace'} > scalar @m3u8arr) && (!$v->{'fetching'}) && ( ($v->{'lastm3u8'} + $v->{'m3u8Delay'}) < time() ) ))  {
+			if ( !$v->{'fetching'} && (!$v->{'m3u8Arr'} || (($v->{'arrayPlace'} > scalar @m3u8arr) && ( ($v->{'lastm3u8'} + $v->{'m3u8Delay'}) < time() ))) )  {
 				main::DEBUGLOG && $log->is_debug && $log->debug('Getting Fresh M3u8 ' . Time::HiRes::time());
 				$v->{'fetching'} = 1;
-				readM3u8(
+				$self->readM3u8(
 					$v->{'m3u8'},
 					sub {
 						my $in=shift;
@@ -856,11 +804,9 @@ sub generateProps {
 
 
 sub readM3u8 {
-	my ( $m3u8, $cbY, $cbN, $headers ) = @_;
+	my ( $self, $m3u8, $cbY, $cbN, $headers ) = @_;
 
-
-	my $session = Slim::Networking::Async::HTTP->new;
-
+	my $v = $self->vars;
 	my $request = HTTP::Request->new( GET => $m3u8 );
 	$request->protocol('HTTP/1.1');
 	if ($headers) {
@@ -870,7 +816,7 @@ sub readM3u8 {
 
 	main::DEBUGLOG && $log->is_debug && $log->debug('dump headers : ' . Dumper($request->headers));
 
-	$session->send_request(
+	$v->{'session'}->send_request(
 		{
 			request => $request,
 			onBody => sub {
