@@ -419,7 +419,7 @@ sub _parseStationList {
 		};
 
 		if ($isRadioFavourites) {
-			$service->{itemActions} = getItemActions($title, $url, $item->{heraldId});
+			$service->{itemActions} = getItemActions($item->{name}, $url, $item->{heraldId});
 		}
 
 		push  @$menu, $service;
@@ -455,13 +455,24 @@ sub _parseFullStationList {
 			$tagline = ' - ' . $item->{tagline};
 		}
 		my $title = $item->{name} . $tagline;
-		push  @$menu,
-		  {
+
+
+		my $url = 'globalplayer://_live_' . $item->{heraldId};
+
+		my $service = {
 			name => $title,
 			type => 'audio',
-			url    =>  'globalplayer://_live_' . $item->{heraldId},
+			url => $url,
+			image => $item->{brandLogo},
 			on_select   => 'play'
-		  };
+		};
+
+		if ($isRadioFavourites) {
+			$service->{itemActions} = getItemActions($item->{name}, $url, $item->{heraldId});
+		}
+
+		push  @$menu, $service;
+		
 	}
 
 	_cacheMenu($cacheIndex, $menu, 600);
