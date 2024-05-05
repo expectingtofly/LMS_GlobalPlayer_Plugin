@@ -42,7 +42,7 @@ use Plugins::GlobalPlayerUK::WebSocketHandler;
 
 use constant MIN_OUT    => 8192;
 use constant DATA_CHUNK => 128 * 1024;
-use constant CHUNK_SECONDS => 10;
+use constant CHUNK_SECONDS => 9.98;
 use constant END_OF_M3U8 => '#EXT-X-ENDLIST';
 use constant RETRY_LIMIT => 3;
 
@@ -479,7 +479,7 @@ sub inboundMetaData {
 			Slim::Utils::Timers::killTimers($self, \&readWS);
 
 			my $seconds = str2time($props->{'finish'}) - str2time($props->{'start'});
-			my $lastArray = ((int($seconds/CHUNK_SECONDS) * 2 ) ) + 7; #Probably 2 too many, but we want overhang.
+			my $lastArray = ((int($seconds/CHUNK_SECONDS) * 2 ) ) + 8; #Probably 2 too many, but we want overhang.
 
 			$v->{'lastArr'} = $lastArray;
 			$v->{'duration'} = $seconds;
@@ -639,7 +639,7 @@ sub sysread {
 						main::DEBUGLOG && $log->is_debug && $log->debug("Reducing start point to allow startup");
 					}
 
-					$self->setTimings((($v->{'arrayPlace'} - 6) / 2) * 9.98 );
+					$self->setTimings((($v->{'arrayPlace'} - 6) / 2) * CHUNK_SECONDS );
 					$v->{'setTimings'} = 1;
 					if (!$v->{'isSeeking'} ) {
 
@@ -650,7 +650,7 @@ sub sysread {
 				}
 
 				if ((!$v->{'setTimings'}) && $v->{'duration'} ) {
-					$self->setTimings((($v->{'arrayPlace'} - 6) / 2) * 9.98 );
+					$self->setTimings((($v->{'arrayPlace'} - 6) / 2) * CHUNK_SECONDS );
 					$v->{'setTimings'} = 1;
 				}
 
