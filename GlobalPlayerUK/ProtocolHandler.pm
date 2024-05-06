@@ -320,7 +320,7 @@ sub new {
 		'lastm3u8' => 0,		# The time we last retrieved the contents of the M3U8
 		'lastArraySize' => 0,
 		'oldFinishTime' => $props->{oldFinishTime},    #The time the last programme finishied
-		'lastArr' => 0,			# The position of the last audio chunk in the current M3U8 array		
+		'lastArr' => 0,			# The position of the last audio chunk in the current M3U8 array
 		'isContinue' => $props->{isContinue},   #Indicator that we are continueing to the next live programme (track)
 		'setTimings' => 0,		#Indicator that we have set the current programme timings
 		'headers'	=> 0,		#M3U8 headers for http checking
@@ -495,6 +495,43 @@ sub inboundMetaData {
 			$song->pluginData( props   => $props );
 			main::DEBUGLOG && $log->is_debug && $log->debug("Closed Initial Web Socket");
 			return;
+		}  else {
+
+			main::DEBUGLOG && $log->is_debug && $log->debug("Old info.  Closing websocket and reopening to try and force a refresh cached info");
+
+			$v->{'ws'}->wssend('{"actions":[{"type":"unsubscribe","stream_id":"' . $v->{'stationId'} . '"}]}');
+			$v->{'ws'}->wsclose();
+			$v->{'ws'}->wsconnect(
+				'wss://metadata.musicradio.com/v2/now-playing',
+				sub {#success
+					main::DEBUGLOG && $log->is_debug && $log->debug("Connected to WS");
+					$v->{'ws'}->wssend('{"actions":[{"type":"subscribe","service":"' . $v->{'stationId'} . '"}]}');
+					$v->{'ws'}->wsreceive(
+						0.1,
+						sub {
+							main::DEBUGLOG && $log->is_debug && $log->debug("Read succeeded");
+						},
+						sub {
+							$log->warn("Failed to read WebSocket");
+						},
+						sub {
+							main::DEBUGLOG && $log->is_debug && $log->debug("Nothing there kick off timer again");
+							Slim::Utils::Timers::setTimer($self, time() + 1, \&readWS);
+						}
+					);
+				},
+				sub {#fail
+					my $result = shift;
+					$log->warn("Failed to connect to WebSocket : $result");
+				},
+				sub {
+					my $readin = shift;
+					main::DEBUGLOG && $log->is_debug && $log->debug("message arrived");
+					$self->inboundMetaData($readin);
+				}
+			);
+			return;
+
 		}
 	} else {
 		$log->warn("No Meta Data JSON : Could be server ping");
@@ -662,7 +699,7 @@ sub sysread {
 				Slim::Networking::SimpleAsyncHTTP->new(
 					sub {
 						my $http = shift;
-						main::DEBUGLOG && $log->is_debug && $log->debug("got chunk length: " . length ${ $http->contentRef }. " for $url");
+						main::DEBUGLOG && $log->is_debug && $log->debug("got chunk length: " . length ${ $http->contentRef } . " for $url");
 						$v->{'inBuf'} .= ${ $http->contentRef };
 						if ($v->{'arrayPlace'} > $v->{'lastArr'}) {
 							main::DEBUGLOG && $log->is_debug && $log->debug("Last item end streaming $v->{'lastArr'} ");
@@ -744,6 +781,10 @@ sub sysread {
 								main::DEBUGLOG && $log->is_debug && $log->debug('New last array from ' . $v->{'lastArr'});
 								$v->{'lastArr'} = (scalar @lastCheckArr) - 2;
 								main::DEBUGLOG && $log->is_debug && $log->debug('setting last array to ' . $v->{'lastArr'});
+								if ( $v->{'arrayPlace'} > $v->{'lastArr'} ) {
+									main::DEBUGLOG && $log->is_debug && $log->debug('Already got last item, ending streaming');
+									$v->{'streaming'} = 0;
+								}
 
 							} else {
 								if ( $v->{'lastArraySize'} == scalar $v->{'m3u8Arr'} ) {
@@ -768,7 +809,7 @@ sub sysread {
 								$v->{'m3u8Delay'} = 9;
 							}
 							$v->{'fetching'} = 0;
-						}						
+						}
 					);
 
 				}
@@ -973,7 +1014,7 @@ sub _getRealM3u8 {
 	Slim::Networking::SimpleAsyncHTTP->new(
 		sub {
 			my $http = shift;
-			my $content = ${ $http->contentRef };			
+			my $content = ${ $http->contentRef };
 			my @m3u8arr = split /\n/, $content;
 
 			my $m3u8 = $m3u8arr[3];
@@ -993,11 +1034,12 @@ sub _getRealM3u8 {
 
 }
 
+
 sub _replaceUrl {
 	my $inUrl = shift;
 	my $rep = shift;
 
-	my @urlsplit = split('/', $inUrl);			
+	my @urlsplit = split('/', $inUrl);
 	$urlsplit[-1] = $rep;
 	my $newurl = join('/', @urlsplit );
 
