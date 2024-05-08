@@ -39,6 +39,7 @@ use Slim::Utils::Prefs;
 
 use Plugins::GlobalPlayerUK::GlobalPlayerFeeder;
 use Plugins::GlobalPlayerUK::WebSocketHandler;
+use Plugins::GlobalPlayerUK::SegmentUtils;
 
 use constant MIN_OUT    => 8192;
 use constant DATA_CHUNK => 128 * 1024;
@@ -145,6 +146,10 @@ sub getNextTrack {
 		};
 		$song->pluginData( props   => $newprops );
 	}
+
+	my $track = $song->track;
+	$track->content_type( 'aac' );
+	$track->update;
 	$successCb->();
 
 	return;
@@ -700,7 +705,15 @@ sub sysread {
 					sub {
 						my $http = shift;
 						main::DEBUGLOG && $log->is_debug && $log->debug("got chunk length: " . length ${ $http->contentRef } . " for $url");
-						$v->{'inBuf'} .= ${ $http->contentRef };
+
+						my %tagshash;
+						my $bytesused = Plugins::GlobalPlayerUK::SegmentUtils::getID3frames(\%tagshash,${ $http->contentRef });
+						main::DEBUGLOG && $log->is_debug && $log->debug("ID3 Bytes skipped $bytesused");
+
+						my $availbytes = (length(${ $http->contentRef }) - $bytesused);
+				
+						$v->{'inBuf'} .= substr(${ $http->contentRef }, $bytesused, $availbytes);
+
 						if ($v->{'arrayPlace'} > $v->{'lastArr'}) {
 							main::DEBUGLOG && $log->is_debug && $log->debug("Last item end streaming $v->{'lastArr'} ");
 							$v->{'streaming'} = 0;
