@@ -506,7 +506,7 @@ sub inboundMetaData {
 
 		if (   (length $props->{m3u8} && !$v->{'isContinue'})
 			|| ($v->{'isContinue'} && length $props->{m3u8} && ( $props->{'finish'} ne $v->{'oldFinishTime'}))) {
-			
+
 
 			my $seconds = str2time($props->{'finish'}) - str2time($props->{'start'});
 			my $lastArray = ((int($seconds/CHUNK_SECONDS) * 2 ) ) + 10; #Probably 2 too many, but we want overhang.
