@@ -38,7 +38,7 @@ use Slim::Utils::Prefs;
 
 
 use Plugins::GlobalPlayerUK::GlobalPlayerFeeder;
-use Plugins::GlobalPlayerUK::WebSocketHandler;
+use Plugins::GlobalPlayerUK::simpleAsyncWS;
 use Plugins::GlobalPlayerUK::SegmentUtils;
 
 use constant MIN_OUT    => 8192;
@@ -169,13 +169,11 @@ sub close {
 
 	main::DEBUGLOG && $log->is_debug && $log->debug('close called');
 	if ($v->{'trackWS'}) {
-		$v->{'trackWS'}->wssend('{"actions":[{"type":"unsubscribe","stream_id":"' . $v->{'stationId'} . '"}]}');
-		$v->{'trackWS'}->wsclose();
-	}
+		$v->{'trackWS'}->send('{"actions":[{"type":"unsubscribe","stream_id":"' . $v->{'stationId'} . '"}]}');
+		$v->{'trackWS'}->close();	}
 
-	Slim::Utils::Timers::killTimers($self, \&readWS);
+	
 	Slim::Utils::Timers::killTimers($self, \&sendHeartBeat);
-	Slim::Utils::Timers::killTimers($self, \&readTrackWS);
 	Slim::Utils::Timers::killTimers($self, \&trackMetaData);
 
 
@@ -293,8 +291,19 @@ sub new {
 		}
 	}
 
+	my $connected = 0;
+	my $ws = Plugins::GlobalPlayerUK::simpleAsyncWS->new( 'wss://metadata.musicradio.com/v2/now-playing',
+		sub {
+			main::DEBUGLOG && $log->is_debug && $log->debug("Connect Succeeeded");	
+			$connected = 1;		
+		},
+		sub {
+			$log->Error("Failed to Connect to web socket");
+			return;
+		},
 
-	my $ws = Plugins::GlobalPlayerUK::WebSocketHandler->new();
+	);
+
 	my $heraldid = _getItemId($masterUrl);
 	my $bufferLength = getBufferLength();
 
@@ -341,35 +350,26 @@ sub new {
 	};
 
 	#Kick off looking for m3u8
-	$ws->wsconnect(
-		'wss://metadata.musicradio.com/v2/now-playing',
-		sub {#success
-			main::DEBUGLOG && $log->is_debug && $log->debug("Connected to WS");
-			$ws->wssend('{"actions":[{"type":"subscribe","service":"' . $heraldid . '"}]}');
-			$ws->wsreceive(
-				0.1,
-				sub {
-					main::DEBUGLOG && $log->is_debug && $log->debug("Read succeeded");
-				},
-				sub {
-					$log->warn("Failed to read WebSocket");
-				},
-				sub {
-					main::DEBUGLOG && $log->is_debug && $log->debug("Nothing there kick off timer again");
-					Slim::Utils::Timers::setTimer($self, time() + 1, \&readWS);
+
+	if ($connected) {
+		$ws->send('{"actions":[{"type":"subscribe","service":"' . $heraldid . '"}]}');
+
+		$ws->listenAsync(			
+			sub {
+				my $readin = shift;
+				main::DEBUGLOG && $log->is_debug && $log->debug("message arrived");
+				if (! $self->inboundMetaData($readin))  {
+					#unsubscribe and resubscribe to trigger again
+					$ws->send('{"actions":[{"type":"unsubscribe","service":"' . $heraldid . '"}]}');
+					$ws->send('{"actions":[{"type":"subscribe","service":"' . $heraldid . '"}]}');
 				}
-			);
-		},
-		sub {#fail
-			my $result = shift;
-			$log->warn("Failed to connect to WebSocket : $result");
-		},
-		sub {
-			my $readin = shift;
-			main::DEBUGLOG && $log->is_debug && $log->debug("message arrived");
-			$self->inboundMetaData($readin);
-		}
-	);
+			},
+			sub {
+				$log->warn("Failed to read WebSocket for Track Meta Data");
+			},
+		);
+
+	}
 
 	return $self;
 }
@@ -378,32 +378,39 @@ sub new {
 sub trackMetaData {
 	my $self = shift;
 	my $v   = $self->vars;
+	my $connected = 0;
 
 	#Do we have a websocket ?
 	if (!$v->{'trackWS'}) {
-		$v->{'trackWS'} = Plugins::GlobalPlayerUK::WebSocketHandler->new();
-
-		#Kick off looking for m3u8
-		$v->{'trackWS'}->wsconnect(
-			'wss://metadata.musicradio.com/v2/now-playing',
-			sub {#success
-				main::DEBUGLOG && $log->is_debug && $log->debug("Connected to tracj WS");
-				$v->{'trackWS'}->wssend('{"actions":[{"type":"subscribe","service":"' . $v->{'stationId'} . '"}]}');
-				$self->sendHeartBeat();
-				$self->readTrackWS();
-
-			},
-			sub {#fail
-				my $result = shift;
-				$log->warn("Failed to read WebSocket : $result");
+		$v->{'trackWS'} = Plugins::GlobalPlayerUK::simpleAsyncWS->new('ws://metadata.musicradio.com/v2/now-playing',		
+			sub {
+					main::DEBUGLOG && $log->is_debug && $log->debug("Connected to track WS");
+					$connected = 1;
+					
 			},
 			sub {
-				my $readin = shift;
-				main::DEBUGLOG && $log->is_debug && $log->debug("message arrived " . $readin . ' - ' . length($readin));
-				$self->inboundTrackMetaData($readin);
+				$log->Error("Failed to Connect to track web socket");
 			}
 		);
+
+		if ($connected) {
+			$v->{'trackWS'}->send('{"actions":[{"type":"subscribe","service":"' . $v->{'stationId'} . '"}]}');			
+			$v->{'trackWS'}->listenAsync(
+				sub {
+					my $buf = shift;
+					main::DEBUGLOG && $log->is_debug && $log->debug("Message received from web socket");					
+					$self->inboundTrackMetaData($buf)
+				},
+				sub {
+						$log->warn("Failed to read WebSocket");
+				}
+			);
+		} else {
+			$log->Error("Could not listen for track meta data ");
+		}
+		
 	}
+	
 	return;
 }
 
@@ -442,11 +449,30 @@ sub inboundTrackMetaData {
 					'output-only'
 				);
 			}
-			$v->{'lastTrackData'} = time();
 
 		} else {
 			main::DEBUGLOG && $log->is_debug && $log->debug("Returning to normal");
-			$v->{'lastTrackData'} = 0;
+
+			my $props = $song->pluginData('props');
+
+			$props->{title} = $props->{'realTitle'};
+			$props->{artist} = $props->{'realArtist'};
+			$props->{artwork} =  $props->{'realArtwork'};
+
+			my $track = "";
+
+			if ($track ne $v->{'trackData'}) {
+				$v->{'trackData'} = $track;
+
+				Slim::Music::Info::setDelayedCallback(
+					$client,
+					sub {
+						$song->pluginData( props   => $props );
+						Slim::Control::Request::notifyFromArray( $client, ['newmetadata'] );
+					},
+					'output-only'
+				);
+			}
 		}
 
 	} else {
@@ -461,7 +487,7 @@ sub sendHeartBeat {
 	my $v        = $self->vars;
 	main::DEBUGLOG && $log->is_debug && $log->debug("sending ws heartbeat");
 	if ($v->{'trackWS'}) {
-		$v->{'trackWS'}->wssend('heartbeat');
+		$v->{'trackWS'}->send('heartbeat');
 	}
 	Slim::Utils::Timers::setTimer($self, time() + 30, \&sendHeartBeat);
 }
@@ -480,8 +506,7 @@ sub inboundMetaData {
 
 		if (   (length $props->{m3u8} && !$v->{'isContinue'})
 			|| ($v->{'isContinue'} && length $props->{m3u8} && ( $props->{'finish'} ne $v->{'oldFinishTime'}))) {
-
-			Slim::Utils::Timers::killTimers($self, \&readWS);
+			
 
 			my $seconds = str2time($props->{'finish'}) - str2time($props->{'start'});
 			my $lastArray = ((int($seconds/CHUNK_SECONDS) * 2 ) ) + 10; #Probably 2 too many, but we want overhang.
@@ -490,8 +515,8 @@ sub inboundMetaData {
 			$v->{'duration'} = $seconds + CHUNK_SECONDS;
 			main::DEBUGLOG && $log->is_debug && $log->debug("Last array : $lastArray duration $seconds");
 
-			$v->{'ws'}->wssend('{"actions":[{"type":"unsubscribe","stream_id":"' . $v->{'stationId'} . '"}]}');
-			$v->{'ws'}->wsclose();
+			$v->{'ws'}->send('{"actions":[{"type":"unsubscribe","service":"' . $v->{'stationId'} . '"}]}');
+			$v->{'ws'}->close();
 
 			$v->{'m3u8'} = $props->{m3u8};
 			$v->{'havem3u8'} = 1;
@@ -499,130 +524,16 @@ sub inboundMetaData {
 
 			$song->pluginData( props   => $props );
 			main::DEBUGLOG && $log->is_debug && $log->debug("Closed Initial Web Socket");
-			return;
+			return 1;
 		}  else {
 
-			main::DEBUGLOG && $log->is_debug && $log->debug("Old info.  Closing websocket and reopening to try and force a refresh cached info");
-
-			$v->{'ws'}->wssend('{"actions":[{"type":"unsubscribe","stream_id":"' . $v->{'stationId'} . '"}]}');
-			$v->{'ws'}->wsclose();
-			$v->{'ws'}->wsconnect(
-				'wss://metadata.musicradio.com/v2/now-playing',
-				sub {#success
-					main::DEBUGLOG && $log->is_debug && $log->debug("Connected to WS");
-					$v->{'ws'}->wssend('{"actions":[{"type":"subscribe","service":"' . $v->{'stationId'} . '"}]}');
-					$v->{'ws'}->wsreceive(
-						0.1,
-						sub {
-							main::DEBUGLOG && $log->is_debug && $log->debug("Read succeeded");
-						},
-						sub {
-							$log->warn("Failed to read WebSocket");
-						},
-						sub {
-							main::DEBUGLOG && $log->is_debug && $log->debug("Nothing there kick off timer again");
-							Slim::Utils::Timers::setTimer($self, time() + 1, \&readWS);
-						}
-					);
-				},
-				sub {#fail
-					my $result = shift;
-					$log->warn("Failed to connect to WebSocket : $result");
-				},
-				sub {
-					my $readin = shift;
-					main::DEBUGLOG && $log->is_debug && $log->debug("message arrived");
-					$self->inboundMetaData($readin);
-				}
-			);
+			main::INFOLOG && $log->is_info && $log->info("Old info.  Will need to retry");
 			return;
 
 		}
 	} else {
 		$log->warn("No Meta Data JSON : Could be server ping");
 	}
-
-	#Unsubscribe, then resubscribe to kick off a new attempt at reading
-	$v->{'ws'}->wssend('{"actions":[{"type":"unsubscribe","stream_id":"' . $v->{'stationId'} . '"}]}');
-	$v->{'ws'}->wssend('{"actions":[{"type":"subscribe","service":"' . $v->{'stationId'} . '"}]}');
-
-
-	main::DEBUGLOG && $log->is_debug && $log->debug("Initiate original meta timer");
-	Slim::Utils::Timers::setTimer($self, time() + 3, \&readWS);
-
-
-	return;
-}
-
-
-sub readWS {
-	my $self = shift;
-
-	main::DEBUGLOG && $log->is_debug && $log->debug("Attempting read on WS");
-
-	my $v = $self->vars;
-	$v->{'ws'}->wsreceive(
-		0.1,
-		sub {
-			main::DEBUGLOG && $log->is_debug && $log->debug("Read succeeded on initial WS");
-		},
-		sub {
-			$log->warn("Failed to read recursive WebSocket");
-		},
-		sub {
-			main::DEBUGLOG && $log->is_debug && $log->debug("Nothing there kick off timer again");
-			Slim::Utils::Timers::setTimer($self, time() + 1, \&readWS);
-		}
-	);
-
-	return;
-}
-
-
-sub readTrackWS {
-	my $self = shift;
-	main::DEBUGLOG && $log->is_debug && $log->debug("Attempting read on track WS");
-
-	my $v = $self->vars;
-	$v->{'trackWS'}->wsreceive(
-		0.1,
-		sub {
-			main::DEBUGLOG && $log->is_debug && $log->debug("Message Yes");
-			Slim::Utils::Timers::setTimer($self, time() + 5, \&readTrackWS);
-		},
-		sub {
-			main::DEBUGLOG && $log->is_debug && $log->debug("Message No");
-			$log->warn("Failed to read track WebSocket -> reconnecting...");
-			$v->{'trackWS'}->wsclose();
-			$v->{'trackWS'} = 0;
-			Slim::Utils::Timers::setTimer($self, time() + 30, \&trackMetaData);
-		},
-		sub {
-			main::DEBUGLOG && $log->is_debug && $log->debug("Message No Data");
-			Slim::Utils::Timers::setTimer($self, time() + 5, \&readTrackWS);
-		}
-	);
-
-	if ( ($v->{'lastTrackData'} + 120) < time() ) {
-		my $song  = ${*$self}{'song'};
-		my $props = $song->pluginData('props');
-		my $client = ${*$self}{'client'};
-
-		$props->{title} = $props->{realTitle};
-		$props->{artist} = $props->{realArtist};
-		$props->{artwork} =  $props->{realArtwork};
-
-		Slim::Music::Info::setDelayedCallback(
-			$client,
-			sub {
-				$song->pluginData( props   => $props );
-				Slim::Control::Request::notifyFromArray( $client, ['newmetadata'] );
-			},
-			'output-only'
-		);
-		$v->{'lastTrackData'} = time();
-	}
-
 	return;
 }
 

@@ -26,7 +26,7 @@ use JSON::XS::VersionOneAndTwo;
 use HTTP::Date;
 use Data::Dumper;
 
-use Plugins::GlobalPlayerUK::WebSocketHandler;
+use Plugins::GlobalPlayerUK::simpleAsyncWS;
 
 my $log = logger('plugin.globalplayeruk');
 
@@ -46,34 +46,27 @@ sub getStationData {
 		return;
 	}
 
-	my $ws = Plugins::GlobalPlayerUK::WebSocketHandler->new();
-	$ws->wsconnect(
+	my $ws = Plugins::GlobalPlayerUK::simpleAsyncWS->new(
 		'wss://metadata.musicradio.com/v2/now-playing',
 		sub {#success
 			main::DEBUGLOG && $log->is_debug && $log->debug("Connected to WS");
-			$ws->wssend('{"actions":[{"type":"subscribe","service":"' . $stationKey . '"}]}');
-			$ws->wsreceive(
-				0.2,
-				sub {
-					main::DEBUGLOG && $log->is_debug && $log->debug("Read succeeded");
-				},
-				sub {
-					$log->warn("Failed to read WebSocket");
-					$cbError>();
-				}
-			);
+		
 		},
 		sub {#fail
 			my $result = shift;
 			$log->warn("Failed to connect to WebSocket : $result");
 			$cbError->();
 		},
+	);
+	$ws->send('{"actions":[{"type":"subscribe","service":"' . $stationKey . '"}]}');
+	$ws->receiveSync(			
+		0.2,
 		sub {#Read
 			my $readin = shift;
 			main::DEBUGLOG && $log->is_debug && $log->debug("read WS : $readin");
 			my $json = decode_json($readin);
-			$ws->wssend('{"actions":[{"type":"unsubscribe","stream_id":"' . $stationKey . '"}]}');
-			$ws->wsclose();
+			$ws->send('{"actions":[{"type":"unsubscribe","service":"' . $stationKey . '"}]}');
+			$ws->close();
 			my $result = {
 				title =>  $json->{current_show}->{name},
 				description => '',
@@ -84,8 +77,14 @@ sub getStationData {
 				stationName => $stationName
 			};
 			$cbSuccess->($result);
+		},		
+		sub {
+			$log->warn("Failed to read WebSocket");
+			$cbError>();
 		}
 	);
+		
+	
 	return;
 }
 
