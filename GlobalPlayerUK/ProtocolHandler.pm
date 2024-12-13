@@ -399,13 +399,13 @@ sub trackMetaData {
 				sub {
 					my $buf = shift;
 					main::DEBUGLOG && $log->is_debug && $log->debug("Message received from web socket");					
-					$self->inboundTrackMetaData($buf);
-					$self->sendHeartBeat();
+					$self->inboundTrackMetaData($buf);					
 				},
 				sub {
 						$log->warn("Failed to read WebSocket");
 				}
 			);
+			$self->sendHeartBeat();
 		} else {
 			$log->error("Could not listen for track meta data ");
 		}
