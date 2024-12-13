@@ -292,7 +292,7 @@ sub _receive {
 			} elsif ($bytes_read == 0) {
 
 				# Remote socket closed
-				$log->Error("Connection terminated by remote. $!");
+				$log->error("Connection terminated by remote. $!");
 
 				$self->{cb_Read_Failed}->();
 
