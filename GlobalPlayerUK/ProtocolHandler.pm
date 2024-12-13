@@ -298,7 +298,7 @@ sub new {
 			$connected = 1;		
 		},
 		sub {
-			$log->Error("Failed to Connect to web socket");
+			$log->error("Failed to Connect to web socket");
 			return;
 		},
 
@@ -389,7 +389,7 @@ sub trackMetaData {
 					
 			},
 			sub {
-				$log->Error("Failed to Connect to track web socket");
+				$log->error("Failed to Connect to track web socket");
 			}
 		);
 
@@ -399,14 +399,15 @@ sub trackMetaData {
 				sub {
 					my $buf = shift;
 					main::DEBUGLOG && $log->is_debug && $log->debug("Message received from web socket");					
-					$self->inboundTrackMetaData($buf)
+					$self->inboundTrackMetaData($buf);
+					$self->sendHeartBeat();
 				},
 				sub {
 						$log->warn("Failed to read WebSocket");
 				}
 			);
 		} else {
-			$log->Error("Could not listen for track meta data ");
+			$log->error("Could not listen for track meta data ");
 		}
 		
 	}
@@ -483,8 +484,8 @@ sub inboundTrackMetaData {
 
 
 sub sendHeartBeat {
-	my $self = shift;
-	my $v        = $self->vars;
+	my $self 	= shift;
+	my $v 		= $self->vars;
 	main::DEBUGLOG && $log->is_debug && $log->debug("sending ws heartbeat");
 	if ($v->{'trackWS'}) {
 		$v->{'trackWS'}->send('heartbeat');
