@@ -403,9 +403,14 @@ sub trackMetaData {
 				},
 				sub {
 						$log->warn("Failed to read WebSocket");
+						$v->{'trackWS'}->endListenAsync();
+						$v->{'trackWS'}->close();
+						$connected = 0;
+						$v->{'trackWS'} = 0;
+						$self->trackMetaData();
 				}
 			);
-			$self->sendHeartBeat();
+			$self->sendHeartBeat() if $connected;
 		} else {
 			$log->error("Could not listen for track meta data ");
 		}
