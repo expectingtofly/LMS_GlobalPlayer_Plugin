@@ -435,6 +435,7 @@ sub inboundTrackMetaData {
 		if ($v->{'tempm3u8'} == 1 && $json->{current_show}->{start} ne $props->{'start'}) {
 				main::DEBUGLOG && $log->is_debug && $log->debug("Resetting Props, have the real ones now");
 			$props = generateProps($json);
+			$song->pluginData( props   => $props );
 
 			my $seconds = str2time($props->{'finish'}) - str2time($props->{'start'});
 			my $lastArray = ((int($seconds/CHUNK_SECONDS) * 2 ) ) + 10; #Probably 2 too many, but we want overhang.
