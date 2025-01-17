@@ -430,6 +430,26 @@ sub inboundTrackMetaData {
 
 	if ( length($metaData) > 5 ) {
 		my $json = decode_json($metaData);
+		my $props = $song->pluginData('props');
+		
+		if ($v->{'tempm3u8'} == 1 && $json->{current_show}->{start} ne $props->{'start'}) {
+				main::DEBUGLOG && $log->is_debug && $log->debug("Resetting Props, have the real ones now");
+			$props = generateProps($json);
+
+			my $seconds = str2time($props->{'finish'}) - str2time($props->{'start'});
+			my $lastArray = ((int($seconds/CHUNK_SECONDS) * 2 ) ) + 10; #Probably 2 too many, but we want overhang.
+
+			$v->{'lastArr'} = $lastArray;
+			$v->{'duration'} = $seconds + CHUNK_SECONDS;
+			
+			$v->{'m3u8'} = $props->{'m3u8'};
+			$v->{'havem3u8'} = 1;
+			$v->{'tempm3u8'} = 0;
+			$v->{'setTimings'} = 0;			
+
+			$v->{'onlyMaster'} = 1;
+		}
+
 		if ( $json->{'now_playing'}->{'type'} eq 'track') {
 
 			my $track = $json->{'now_playing'}->{'title'} . ' by ' . $json->{'now_playing'}->{'artist'};
@@ -437,7 +457,6 @@ sub inboundTrackMetaData {
 
 			main::DEBUGLOG && $log->is_debug && $log->debug("NEW TRACK ...  $track");
 
-			my $props = $song->pluginData('props');
 
 			$props->{title} = $json->{'now_playing'}->{'title'};
 			$props->{artist} = $json->{'now_playing'}->{'artist'};
@@ -457,9 +476,7 @@ sub inboundTrackMetaData {
 			}
 
 		} else {
-			main::DEBUGLOG && $log->is_debug && $log->debug("Returning to normal");
-
-			my $props = $song->pluginData('props');
+			main::DEBUGLOG && $log->is_debug && $log->debug("Returning to normal");			
 
 			$props->{title} = $props->{'realTitle'};
 			$props->{artist} = $props->{'realArtist'};
@@ -526,6 +543,7 @@ sub inboundMetaData {
 
 			$v->{'m3u8'} = $props->{m3u8};
 			$v->{'havem3u8'} = 1;
+			$v->{'tempm3u8'} = 0;
 			$v->{'onlyMaster'} = 1;
 
 			$song->pluginData( props   => $props );
@@ -533,14 +551,55 @@ sub inboundMetaData {
 			return 1;
 		}  else {
 
-			main::INFOLOG && $log->is_info && $log->info("Old info.  Will need to retry");
-			return;
+			main::DEBUGLOG && $log->is_debug && $log->debug("Creating Temporary m3u8");
+			#Let's create a temporary solution so streaming can continue
+			my $tempm3u8 = _createTemporarym3u8($props->{m3u8}, $v->{'oldFinishTime'} );
+
+
+			my $seconds = 7400;
+			my $lastArray = ((int($seconds/CHUNK_SECONDS) * 2 ) ) + 10; #Probably 2 too many, but we want overhang.
+
+			$v->{'lastArr'} = $lastArray;
+			$v->{'duration'} = $seconds + CHUNK_SECONDS;
+			main::DEBUGLOG && $log->is_debug && $log->debug("Last array : $lastArray duration $seconds");
+
+			$v->{'ws'}->send('{"actions":[{"type":"unsubscribe","service":"' . $v->{'stationId'} . '"}]}');
+			$v->{'ws'}->close();
+
+			$v->{'m3u8'} = $tempm3u8;
+			$v->{'havem3u8'} = 1;
+			$v->{'tempm3u8'} = 1;
+			$v->{'onlyMaster'} = 1;
+
+			$song->pluginData( props   => $props );
+			main::DEBUGLOG && $log->is_debug && $log->debug("Closed Initial Web Socket");
+
+			main::INFOLOG && $log->is_info && $log->info("Old info.  So carry on with guess...");
+			return 1;
 
 		}
 	} else {
 		$log->warn("No Meta Data JSON : Could be server ping");
 	}
 	return;
+}
+
+sub _createTemporarym3u8 {
+	my $m3u8 = shift;
+	my $oldFinishTime = shift;
+
+	my $newm3u8 = $m3u8;
+	my $dt = str2time($oldFinishTime);
+	$dt += 7400;
+
+	my $iso8601_string = strftime("%Y-%m-%dT%H:%M:%S+00:00", gmtime($dt));
+
+	my $range = $oldFinishTime . '&playlistEndAt=' . $iso8601_string;
+	$newm3u8 =~ s/(playlistStartFrom=).*/$1$range/;
+	main::DEBUGLOG && $log->is_debug && $log->debug("Temporary m3u8 : $newm3u8 ");
+
+	return $newm3u8;
+
 }
 
 
@@ -589,8 +648,11 @@ sub sysread {
 						main::DEBUGLOG && $log->is_debug && $log->debug("Seeking and using the time : $epoch ");
 					}
 
-
-					$self->setM3U8Array($epoch);
+					if ((!$v->{'isContinue'}) || $v->{'isSeeking'} ) {
+						$self->setM3U8Array($epoch);
+					} else {
+						$v->{'arrayPlace'} = 6;
+					}
 
 					#if its the last one in the m3u8 it doesn't give enough time and you get a pause, so adjusting
 					if (!$v->{'isSeeking'} && ( $v->{'arrayPlace'} != 6) && (scalar @m3u8arr == ($v->{'arrayPlace'} + 1))) {
@@ -615,6 +677,8 @@ sub sysread {
 
 				my $url = _replaceUrl($v->{'m3u8'},$m3u8arr[$v->{'arrayPlace'}]);
 				main::DEBUGLOG && $log->is_debug && $log->debug("Now at  $v->{'arrayPlace'} ending at $v->{'lastArr'} ");
+				main::DEBUGLOG && $log->is_debug && $log->debug("Getting $url");
+
 
 				$v->{'arrayPlace'} += 2;
 
