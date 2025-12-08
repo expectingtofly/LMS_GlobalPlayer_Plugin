@@ -52,6 +52,8 @@ Slim::Player::ProtocolHandlers->registerHandler('globalplayer', __PACKAGE__);
 
 my $log = logger('plugin.globalplayeruk');
 my $prefs = preferences('plugin.globalplayeruk');
+my $uaString = Slim::Utils::Misc::userAgentString();
+$uaString =~ s/iTunes\/4.7.1/Mozilla\/5.0/;
 
 sub isAudio { 1 }
 
@@ -720,7 +722,7 @@ sub sysread {
 						$v->{'fetching'} = 0;
 
 					}
-				)->get($url);
+				)->get($url,{'User-Agent' => $uaString});
 			}
 		}
 	}
@@ -873,7 +875,7 @@ sub readM3u8 {
 	my $v = $self->vars;
 
 
-	Slim::Networking::SimpleAsyncHTTP->new(
+		Slim::Networking::SimpleAsyncHTTP->new(
 		sub {
 			my $http = shift;
 			my $content = ${ $http->contentRef };
@@ -889,7 +891,7 @@ sub readM3u8 {
 			$cbN->(0);
 
 		}
-	)->get($m3u8);
+	)->get($m3u8, { 'User-Agent' => $uaString });
 
 	return;
 }
@@ -1024,7 +1026,7 @@ sub _getRealM3u8 {
 			$cbN->();
 
 		}
-	)->get($parent);
+	)->get($parent, { 'User-Agent' => $uaString });
 
 
 }
