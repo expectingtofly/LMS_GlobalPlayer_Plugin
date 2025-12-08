@@ -722,7 +722,7 @@ sub sysread {
 						$v->{'fetching'} = 0;
 
 					}
-				)->get($url,{'User-Agent' => $uaString});
+				)->get($url,'User-Agent' => $uaString);
 			}
 		}
 	}
@@ -891,7 +891,7 @@ sub readM3u8 {
 			$cbN->(0);
 
 		}
-	)->get($m3u8, { 'User-Agent' => $uaString });
+	)->get($m3u8,  'User-Agent' => $uaString );
 
 	return;
 }
@@ -1026,7 +1026,7 @@ sub _getRealM3u8 {
 			$cbN->();
 
 		}
-	)->get($parent, { 'User-Agent' => $uaString });
+	)->get($parent, 'User-Agent' => $uaString);
 
 
 }
