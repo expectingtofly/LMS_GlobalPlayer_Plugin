@@ -149,9 +149,8 @@ sub _connect {
 			my $client = shift;
 			my ($buf) = @_;
 
-			$log->warn("ERROR ON WEBSOCKET: $buf");
-			$self->{tcp_socket}->close;
-			exit;
+			$log->error("ERROR ON WEBSOCKET: $buf");
+			$self->_readFailed();			
 		}
 	);
 
@@ -204,6 +203,16 @@ sub _read {
 	my ($self, $buf) = @_;
 
 	$self->{cb_Read}->($buf);
+
+	return;
+}
+
+sub _readFailed {
+	my ($self) = @_;
+	
+	$self->{continue_listening} = 0;
+	main::INFOLOG && $log->is_info && $log->info("Read errored so attempting callback");
+	$self->{cb_Read_Failed}->();
 
 	return;
 }
