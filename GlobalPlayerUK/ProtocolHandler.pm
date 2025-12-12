@@ -409,7 +409,8 @@ sub trackMetaData {
 						$v->{'trackWS'}->close();
 						$connected = 0;
 						$v->{'trackWS'} = 0;
-						$self->trackMetaData();
+						# start listening to track meta data in 30 seconds
+						Slim::Utils::Timers::setTimer($self, time() + 30, \&trackMetaData);
 				}
 			);
 			$self->sendHeartBeat() if $connected;
