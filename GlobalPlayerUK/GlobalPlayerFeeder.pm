@@ -140,7 +140,7 @@ sub callAPI {
 		$cacheIndex =  $callUrl;
 	} elsif ($call eq 'PodcastSearch') {
 		my $searchstr = $args->{'search'};
-		$callUrl = 'https://bff-web-guacamole.musicradio.com/podcasts/search/?query=' . URI::Escape::uri_escape_utf8($searchstr);
+		$callUrl = 'https://bff-web-guacamole.musicradio.com/podcasts/search/?query=' . URI::Escape::uri_escape_utf8($searchstr) . '&content_types=podcast';
 		$parser = \&_parsePodcastSearchResults;
 		$cacheIndex =  $callUrl;
 	} elsif ($call eq 'StationSchedules') {

@@ -170,9 +170,11 @@ sub close {
 
 
 	main::DEBUGLOG && $log->is_debug && $log->debug('close called');
-	if ($v->{'trackWS'}) {
+
+	if ($v->{'trackWS'} && $v->{'trackWS'}->isOpen()) {
 		$v->{'trackWS'}->send('{"actions":[{"type":"unsubscribe","stream_id":"' . $v->{'stationId'} . '"}]}');
-		$v->{'trackWS'}->close();	}
+		$v->{'trackWS'}->close();
+	}
 
 	
 	Slim::Utils::Timers::killTimers($self, \&sendHeartBeat);
