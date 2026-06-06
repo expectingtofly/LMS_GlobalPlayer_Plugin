@@ -49,6 +49,11 @@ sub new {
 	return $self;
 }
 
+sub isOpen {
+	my ($self) = @_;
+
+	return $self->{socket_open};
+}
 
 sub close {
 	my ($self) = @_;
