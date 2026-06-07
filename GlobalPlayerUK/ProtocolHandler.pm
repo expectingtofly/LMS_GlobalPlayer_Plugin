@@ -969,6 +969,21 @@ sub explodePlaylist {
 					$cb->([$uri]);
 				}
 			);
+		} elsif ( $uri =~ /_podcastepisode_/gm) {
+			my $id = _getItemId($uri);
+			Plugins::GlobalPlayerUK::GlobalPlayerFeeder::getPlayableStreamUrl(
+				$id,
+				sub {
+					my $stream = shift;
+
+					$cb->([$stream]);
+
+				},
+				sub {
+					$log->error("Failed to get playlist stream URL");
+					$cb->([$uri]);
+				}
+			);
 		} elsif ( $uri =~ /_catchup_|_podcast_/) {
 			if ($main::VERSION lt '8.2.0') {
 				$log->warn("Global Player Favourites only supported in LMS 8.2.0 and greater");

@@ -140,7 +140,7 @@ sub callAPI {
 		$cacheIndex =  $callUrl;
 	} elsif ($call eq 'PodcastSearch') {
 		my $searchstr = $args->{'search'};
-		$callUrl = 'https://bff-web-guacamole.musicradio.com/podcasts/search/?query=' . URI::Escape::uri_escape_utf8($searchstr) . '&content_types=podcast';
+		$callUrl = 'https://bff-web-guacamole.musicradio.com/search/?query=' . URI::Escape::uri_escape_utf8($searchstr) . '&content_types=podcast';
 		$parser = \&_parsePodcastSearchResults;
 		$cacheIndex =  $callUrl;
 	} elsif ($call eq 'StationSchedules') {
@@ -222,21 +222,32 @@ sub _parsePodcastEpisodes {
 	$log->debug("episodes : $ctnt");
 	my $JSON = decode_json $ctnt;
 
-	my $episodes = $JSON->{episodes};
+	my $episodes = [];
+
+	for my $block (@{ $JSON->{blocks} }) {
+		if ($block->{type} eq 'Listing') {
+			$episodes = $block->{items};
+			last;
+		}
+	}
 
 	my $menu = [];
 
 	for my $item (@$episodes) {
 
-		my $stdat = str2time( $item->{'pubDate'} );
+		my $stdat = str2time( $item->{content}->{published} );
 		my $strfdte = strftime( '%d/%m/%y ', localtime($stdat) );
 		my $title = $strfdte . $item->{title};
+		my $line2 = $strfdte . ' ' . $item->{content}->{duration};
+		my $url = 'globalplayer://_podcastepisode_' . $item->{id};
 		push  @$menu,
 		  {
-			name => $title,
-			type => 'audio',
-			url         => $item->{streamUrl},
-			image => $item->{imageUrl},
+			name  => $title,
+			line1 => $item->{title},
+			line2 => $line2,
+			type  => 'audio',
+			url   => $url,
+			image => $item->{image}->{url},
 			on_select   => 'play'
 		  };
 	}
@@ -280,7 +291,7 @@ sub _parsePodcastSearchResults {
 
 	my $JSON = decode_json ${ $http->contentRef };
 
-	my $podcasts = $JSON->{podcasts};
+	my $podcasts = $JSON->{sections}[0]->{items};
 
 	my $menu = [];
 
@@ -324,18 +335,22 @@ sub _parsePodcastDetails {
 	my $loop = sub {
 		my $blocks = shift;
 		for my $item (@$blocks) {
-			my $title = $item->{title};
-			my $items = _parsePodcastItems($item->{items});
-			push  @$menu,
-			  {
-				name => $item->{title},
-				type => 'link',
-				items => $items
-			  };
+
+			if ($item->{type} eq 'Carousel') {
+				my $title = $item->{title};
+				my $items = _parsePodcastItems($item->{items});
+				push  @$menu,
+				{
+					name => $item->{title},
+					line1 => $item->{title},
+					line2 => $item->{subtitle},
+					type => 'link',
+					items => $items
+				};
+			}
 		}
 	};
-
-	$loop->([$JSON->{heroBlock}]);
+	
 	$loop->($JSON->{blocks});
 
 	_cacheMenu($cacheIndex, $menu, 600);
@@ -624,6 +639,31 @@ sub getPlaylistStreamUrl {
 	)->get($callUrl);
 
 	main::DEBUGLOG && $log->is_debug && $log->debug("--getPlaylistStreamUrl");
+	return;
+}
+
+
+sub getPlayableStreamUrl {
+	my ( $id, $cbY, $cbN ) = @_;
+	main::DEBUGLOG && $log->is_debug && $log->debug("++getPlayableStreamUrl");
+
+	my $callUrl = "https://bff-web-guacamole.musicradio.com/playables/$id";
+
+	Slim::Networking::SimpleAsyncHTTP->new(
+		sub {
+			my $http = shift;
+			my $JSON = decode_json ${ $http->contentRef };
+			$cbY->($JSON->{playback}[0]->{url});
+		},
+
+		# Called when no response was received or an error occurred.
+		sub {
+			$log->warn("error: $_[1]");
+			$cbN->();
+		}
+	)->get($callUrl);
+
+	main::DEBUGLOG && $log->is_debug && $log->debug("--getPlayableStreamUrl");
 	return;
 }
 
