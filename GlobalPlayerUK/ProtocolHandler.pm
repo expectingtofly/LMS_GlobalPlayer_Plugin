@@ -527,6 +527,7 @@ sub inboundMetaData {
 	my $metaData = shift;
 	my $v        = $self->vars;
 	my $song  = ${*$self}{'song'};
+	my $client = ${*$self}{'client'};
 
 	if ( length($metaData) > 5 ) {
 		my $json = decode_json($metaData);
@@ -553,6 +554,7 @@ sub inboundMetaData {
 			$v->{'onlyMaster'} = 1;
 
 			$song->pluginData( props   => $props );
+			Slim::Control::Request::notifyFromArray( $client, ['newmetadata'] );
 			main::DEBUGLOG && $log->is_debug && $log->debug("Closed Initial Web Socket");
 			return 1;
 		}  else {
